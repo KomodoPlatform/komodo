@@ -198,11 +198,9 @@ const char *Notaries_elected1[][2] =
     {"xrobesx_NA", "03f0cc6d142d14a40937f12dbd99dbd9021328f45759e26f1877f2a838876709e1" },
 };
 
-uint32_t komodo_heightstamp(int32_t height);
-
 int32_t komodo_notaries(uint8_t pubkeys[64][33],int32_t height,uint32_t timestamp)
 {
-    static uint8_t elected_pubkeys0[64][33],elected_pubkeys1[64][33],did0,did1;
+    static uint8_t elected_pubkeys0[64][33],elected_pubkeys1[64][33],did0,did1; static int32_t n0,n1;
     int32_t i,htind,n; uint64_t mask = 0; struct knotary_entry *kp,*tmp;
     if ( timestamp == 0 && ASSETCHAINS_SYMBOL[0] != 0 )
         timestamp = komodo_heightstamp(height);
@@ -214,29 +212,30 @@ int32_t komodo_notaries(uint8_t pubkeys[64][33],int32_t height,uint32_t timestam
         {
             if ( did0 == 0 )
             {
-                n = (int32_t)(sizeof(Notaries_elected0)/sizeof(*Notaries_elected0));
-                for (i=0; i<n; i++)
+                n0 = (int32_t)(sizeof(Notaries_elected0)/sizeof(*Notaries_elected0));
+                for (i=0; i<n0; i++)
                     decode_hex(elected_pubkeys0[i],33,(char *)Notaries_elected0[i][1]);
                 did0 = 1;
             }
-            memcpy(pubkeys,elected_pubkeys0,n * 33);
+            memcpy(pubkeys,elected_pubkeys0,n0 * 33);
             //if ( ASSETCHAINS_SYMBOL[0] != 0 )
-            //fprintf(stderr,"%s height.%d t.%u elected.%d notaries\n",ASSETCHAINS_SYMBOL,height,timestamp,n);
+            //fprintf(stderr,"%s height.%d t.%u elected.%d notaries\n",ASSETCHAINS_SYMBOL,height,timestamp,n0);
+            return(n0);
         }
         else //if ( (timestamp != 0 && timestamp <= KOMODO_NOTARIES_TIMESTAMP2) || height <= KOMODO_NOTARIES_HEIGHT2 )
         {
             if ( did1 == 0 )
             {
-                n = (int32_t)(sizeof(Notaries_elected1)/sizeof(*Notaries_elected1));
-                for (i=0; i<n; i++)
+                n1 = (int32_t)(sizeof(Notaries_elected1)/sizeof(*Notaries_elected1));
+                for (i=0; i<n1; i++)
                     decode_hex(elected_pubkeys1[i],33,(char *)Notaries_elected1[i][1]);
                 if ( 0 && ASSETCHAINS_SYMBOL[0] != 0 )
-                    fprintf(stderr,"%s height.%d t.%u elected.%d notaries2\n",ASSETCHAINS_SYMBOL,height,timestamp,n);
+                    fprintf(stderr,"%s height.%d t.%u elected.%d notaries2\n",ASSETCHAINS_SYMBOL,height,timestamp,n1);
                 did1 = 1;
             }
-            memcpy(pubkeys,elected_pubkeys1,n * 33);
+            memcpy(pubkeys,elected_pubkeys1,n1 * 33);
+            return(n1);
         }
-        return(n);
     }
     htind = height / KOMODO_ELECTION_GAP;
     if ( htind >= KOMODO_MAXBLOCKS / KOMODO_ELECTION_GAP )
@@ -543,5 +542,38 @@ void komodo_init(int32_t height)
         didinit = 1;
         komodo_stateupdate(0,0,0,0,zero,0,0,0,0,0,0,0,0,0,0);
     }
-}
+ }
 
+/*void komodo_assetchain_pubkeys(char *jsonstr)
+{
+    cJSON *array; int32_t i,n; uint8_t pubkeys[64][33]; char *hexstr;
+    memset(pubkeys,0,sizeof(pubkeys));
+    if ( (array= cJSON_Parse(jsonstr)) != 0 )
+    {
+        if ( (n= cJSON_GetArraySize(array)) > 0 )
+        {
+            for (i=0; i<n; i++)
+            {
+                if ( (hexstr= jstri(array,i)) != 0 && is_hexstr(hexstr,0) == 66 )
+                {
+                    decode_hex(pubkeys[i],33,hexstr);
+                    fprintf(stderr,"i.%d of n.%d pubkey.(%s)\n",i,n,hexstr);
+                }
+                else
+                {
+                    fprintf(stderr,"illegal hexstr.(%s) i.%d of n.%d\n",hexstr,i,n);
+                    break;
+                }
+            }
+            if ( i == n )
+            {
+                komodo_init(-1);
+                komodo_notarysinit(0,pubkeys,n);
+                KOMODO_EXTERNAL_NOTARIES = 1;
+                //printf("initialize pubkeys[%d]\n",n);
+            } else fprintf(stderr,"komodo_assetchain_pubkeys i.%d vs n.%d\n",i,n);
+        } else fprintf(stderr,"assetchain pubkeys n.%d\n",n);
+    }
+    //else if ( jsonstr != 0 )
+    //    fprintf(stderr,"assetchain pubkeys couldnt parse.(%s)\n",jsonstr);
+}*/
