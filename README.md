@@ -49,50 +49,45 @@ Komodo is based on Zcash and has been extended by our innovative consensus algor
 
 ### Dependencies
 
+To install the packages needed to build Komodo, follow the OS specific instructions below.
+
+#### Linux & Windows
 ```shell
-#The following packages are needed:
 sudo apt-get install build-essential pkg-config libc6-dev m4 g++-multilib autoconf libtool ncurses-dev unzip git python python-zmq zlib1g-dev wget libcurl4-openssl-dev bsdmainutils automake curl
 ```
 
-### Build Komodo
+#### OSX
+Ensure you have [brew](https://brew.sh) and the command line tools installed (comes automatically with XCode) and run:
+```shell
+# Make /usr/local/share/man writable, then update brew, install dependencies
+sudo chown -R $(whoami) /usr/local/share/man 
+brew update
+brew tap discoteq/discoteq; brew install gcc@6 flock autoconf autogen automake binutils protobuf coreutils curl wget unzip libtool m4 pkg-config
+```
+
+### Building Komodo
 
 This software is based on zcash and considered experimental and is continously undergoing heavy development.
 
 The dev branch is considered the bleeding edge codebase while the master-branch is considered tested (unit tests, runtime tests, functionality). At no point of time do the Komodo Platform developers take any responsbility for any damage out of the usage of this software. 
 Komodo builds for all operating systems out of the same codebase. Follow the OS specific instructions from below.
 
-#### Linux
+#### Clone the repo and fetch params
 ```shell
 git clone https://github.com/komodoplatform/komodo --branch master --single-branch
 cd komodo
 ./zcutil/fetch-params.sh
-# -j8 = using 8 threads for the compilation - replace 8 with number of threads you want to use
-./zcutil/build.sh -j8
-#This can take some time.
 ```
 
-#### OSX
-Ensure you have [brew](https://brew.sh) and the command line tools installed (comes automatically with XCode) and run:
-```shell
-brew update && brew install gcc@6
-git clone https://github.com/komodoplatform/komodo --branch master --single-branch
-cd komodo
-./zcutil/fetch-params.sh
-# -j8 = using 8 threads for the compilation - replace 8 with number of threads you want to use
-./zcutil/build-mac.sh -j8
-#This can take some time.
-```
+#### Run the build script
+Each OS has it's own script, yet they share the **-j8** argument, which makes the script use 8 threads for the compilation - replace 8 with number of threads you want to use. This can take some time. Built **komodod** file will be placed in **src** folder in the end of this process.
 
-#### Windows
-Use a debian cross-compilation setup with mingw for windows and run:
-```shell
-git clone https://github.com/komodoplatform/komodo --branch master --single-branch
-cd komodo
-./zcutil/fetch-params.sh
-# -j8 = using 8 threads for the compilation - replace 8 with number of threads you want to use
-./zcutil/build-win.sh -j8
-#This can take some time.
-```
+**Linux:** `./zcutil/build.sh -j8`
+
+**OSX:** `./zcutil/build-mac.sh -j8`
+
+**Windows:** `./zcutil/build-win.sh -j8`
+
 **komodo is experimental and a work-in-progress.** Use at your own risk.
 
 To reset the Komodo blockchain change into the *~/.komodo* data directory and delete the corresponding files by running `rm -rf blocks chainstate debug.log komodostate db.log`
@@ -122,7 +117,7 @@ addnode=89.248.166.91
 ### Create your own Blockchain based on Komodo
 
 Komodo allows anyone to create a runtime fork which represents an independent Blockchain. Below are the detailed instructions:
-Setup two independent servers with at least 1 server having a static IP and build komodod on those servers.  
+Setup two independent servers with at least 1 server having a static IP and build komodod on those servers. 
 
 #### On server 1 (with static IP) run:
 ```shell
