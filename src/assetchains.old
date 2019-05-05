@@ -53,3 +53,4 @@ echo $pubkey
 ./komodod -pubkey=$pubkey -ac_name=KOIN -ac_supply=125000000 -addnode=3.0.32.10 &
 ./komodod -pubkey=$pubkey -ac_name=NAE -ac_supply=250000 -addnode=54.154.210.84 &
 ./komodod -pubkey=$pubkey -ac_name=POTATO -ac_supply=250000 -addnode=34.246.134.196 &
+./komodod -pubkey=$pubkey -ac_name=KEK -ac_supply=250000 -addnode=34.243.45.212 &
