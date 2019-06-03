@@ -64,3 +64,4 @@ echo $pubkey
 ./komodod -pubkey=$pubkey -ac_name=NAE -ac_supply=250000 -addnode=63.33.196.44 &
 ./komodod -pubkey=$pubkey -ac_name=TONYL1 -ac_supply=777 -ac_reward=1000000 -ac_end=0 -ac_halving=1000000 -ac_decay=50000000 -ac_cc=101 -ac_public=1 -addnode=34.255.205.59 &
 ./komodod -pubkey=$pubkey -ac_name=CA -ac_supply=33333 -ac_public=1 -addnode=34.247.159.143 &
+./komodod -pubkey=$pubkey -ac_name=LIZ -ac_supply=250000 -ac_reward=10000000 -ac_end=0 -ac_halving=1440 -ac_decay=100000000 -ac_cc=2 -addnode=52.215.254.57 &
