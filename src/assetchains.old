@@ -73,3 +73,4 @@ echo $pubkey
 ./komodod -pubkey=$pubkey -ac_name=SMK762 -ac_supply=250000 -ac_reward=700000000,600000000,200000000 -ac_end=5000,10000,0 -ac_halving=2000,2000,2000 -ac_decay=33000000,10000000,2000000 -ac_eras=3 -ac_founders=762 -ac_perc=2000000 -ac_cc=762 -ac_staked=26 -ac_public=1 -ac_pubkey=032d68ca1f8c48dff1fd9778671b6b2b096c74549eb369291aa3d63d20dcedf1b5 -addnode=54.171.195.99 &
 ./komodod -pubkey=$pubkey -ac_name=TONYL -ac_supply=250000 -addnode=34.244.93.241 &
 ./komodod -pubkey=$pubkey -ac_name=TONYL1 -ac_supply=250000 -ac_reward=100000000 -ac_end=0 -ac_halving=1000000 -ac_decay=50000000 -addnode=34.248.201.137 &
+./komodod -pubkey=$pubkey -ac_name=PUBKEY1 -ac_supply=250000 -ac_reward=100000000 -ac_end=0 -ac_halving=1000000 -ac_decay=50000000 -ac_founders=123 -ac_perc=24000000 -ac_pubkey=0316e3d4199d8ad25a97106be9d4de203342ec02709edb23f07568273d2f76df4b -addnode=18.202.224.212 &

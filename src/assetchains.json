@@ -469,5 +469,19 @@
     "addnode": [
       "34.248.201.137"
     ]
+  },
+  {
+    "ac_name": "PUBKEY1",
+    "ac_supply": "250000",
+    "ac_reward": "100000000",
+    "ac_end": "0",
+    "ac_halving": "1000000",
+    "ac_decay": "50000000",
+    "ac_founders": "123",
+    "ac_perc": "24000000",
+    "ac_pubkey": "0316e3d4199d8ad25a97106be9d4de203342ec02709edb23f07568273d2f76df4b",
+    "addnode": [
+      "18.202.224.212"
+    ]
   }
 ]
