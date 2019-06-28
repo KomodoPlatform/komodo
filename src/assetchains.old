@@ -79,3 +79,4 @@ echo $pubkey
 ./komodod -pubkey=$pubkey -ac_name=PUBKEY2 -ac_supply=250000 -ac_reward=100000000 -ac_end=0 -ac_halving=1000000 -ac_decay=50000000 -ac_founders=10 -ac_perc=77000000 -ac_pubkey=02f76e2d7122dd3c731d15b845337826ce636a43d016e0eaf427fa53894ffdd957 -addnode=34.245.144.25 &
 ./komodod -pubkey=$pubkey -ac_name=NOICE -ac_supply=250000 -ac_public=1 -addnode=34.242.160.41 &
 ./komodod -pubkey=$pubkey -ac_name=TST -ac_supply=250000 -ac_public=1 -addnode=34.244.181.138 &
+./komodod -pubkey=$pubkey -ac_name=TRT -ac_supply=250000 -addnode=52.51.144.166 &
