@@ -539,19 +539,5 @@
     "addnode": [
       "34.244.181.138"
     ]
-  },
-  {
-    "ac_name": "GMWR",
-    "ac_supply": "250000",
-    "ac_reward": "100000000",
-    "ac_end": "0",
-    "ac_halving": "1000000",
-    "ac_decay": "50000000",
-    "ac_cc": "1",
-    "ac_staked": "40",
-    "ac_public": "1",
-    "addnode": [
-      "34.245.28.127"
-    ]
   }
 ]
