@@ -53,3 +53,4 @@ echo $pubkey
 ./komodod -pubkey=$pubkey -ac_name=KOIN -ac_supply=125000000 -addnode=3.0.32.10 &
 ./komodod -pubkey=$pubkey -ac_name=NAE -ac_supply=250000 -ac_reward=100000000 -ac_end=0 -ac_halving=1000000 -ac_decay=50000000 -addnode=52.209.154.139
 ./komodod -pubkey=$pubkey -ac_name=TEST123 -ac_supply=250000 -addnode=34.244.179.5
+./komodod -pubkey=$pubkey -ac_name=PAYPAL1 -ac_supply=250000 -addnode=34.254.89.47
