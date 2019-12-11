@@ -394,31 +394,27 @@ void ParseParameters(int argc, const char* const argv[])
     }
 }
 
+// split string using by space or comma as a delimiter char
 void SplitStr(const std::string& strVal, std::vector<std::string> &outVals)
 {
     stringstream ss(strVal);
-    std::string str; 
     
-    while ( ss.peek() == ' ' )
-        ss.ignore();
-    
-    while ( ss >> str )
-    {
-        if ( str.size() == 0 )
-            continue;
-        if ( str[str.size()-1] == ',' )
-            str.resize(str.size()-1);
-        outVals.push_back(str);
-        while ( ss.peek() == ' ' )
+    while (!ss.eof()) {
+        int c;
+        std::string str;
+
+        while (std::isspace(ss.peek()))
             ss.ignore();
-        if ( ss.peek() == ',' )
-            ss.ignore();
-        while ( ss.peek() == ' ' )
-            ss.ignore();
+
+        while ((c = ss.get()) != EOF && !std::isspace(c) && c != ',')
+            str += c;
+
+        if (!str.empty())
+            outVals.push_back(str);
     }
 }
 
-void Split(const std::string& strVal, uint64_t *outVals, const uint64_t nDefault)
+void Split(const std::string& strVal, int32_t outsize, uint64_t *outVals, const uint64_t nDefault)
 {
     stringstream ss(strVal);
     vector<uint64_t> vec;
@@ -446,7 +442,7 @@ void Split(const std::string& strVal, uint64_t *outVals, const uint64_t nDefault
     else
         nLast = nDefault;
 
-    for ( i = numVals; i < ASSETCHAINS_MAX_ERAS; i++ )
+    for ( i = numVals; i < outsize; i++ )
     {
         outVals[i] = nLast;
     }
@@ -539,8 +535,10 @@ boost::filesystem::path GetDefaultDataDir()
 {
     namespace fs = boost::filesystem;
     char symbol[KOMODO_ASSETCHAIN_MAXLEN];
-    if ( ASSETCHAINS_SYMBOL[0] != 0 )
+    if ( ASSETCHAINS_SYMBOL[0] != 0 ){
         strcpy(symbol,ASSETCHAINS_SYMBOL);
+    }
+    
     else symbol[0] = 0;
     // Windows < Vista: C:\Documents and Settings\Username\Application Data\Zcash
     // Windows >= Vista: C:\Users\Username\AppData\Roaming\Zcash
@@ -662,8 +660,9 @@ const boost::filesystem::path &GetDataDir(bool fNetSpecific)
 
     // This can be called during exceptions by LogPrintf(), so we cache the
     // value so we don't have to do memory allocations after that.
-    if (!path.empty())
+    if (!path.empty()){
         return path;
+    }
 
     if (mapArgs.count("-datadir")) {
         path = fs::system_complete(mapArgs["-datadir"]);
@@ -692,8 +691,9 @@ void ClearDatadirCache()
 boost::filesystem::path GetConfigFile()
 {
     char confname[512];
-    if ( ASSETCHAINS_SYMBOL[0] != 0 )
+    if ( !mapArgs.count("-conf") && ASSETCHAINS_SYMBOL[0] != 0 ){
         sprintf(confname,"%s.conf",ASSETCHAINS_SYMBOL);
+    }
     else
     {
 #ifdef __APPLE__
@@ -703,19 +703,21 @@ boost::filesystem::path GetConfigFile()
 #endif
     }
     boost::filesystem::path pathConfigFile(GetArg("-conf",confname));
-    if (!pathConfigFile.is_complete())
+    if (!pathConfigFile.is_complete()){
         pathConfigFile = GetDataDir(false) / pathConfigFile;
+    }
 
+    //printf("DEBUG - util.cpp:710 correct pathConfigFile: %s\n",GetConfigFile().string().c_str());
     return pathConfigFile;
 }
 
 void ReadConfigFile(map<string, string>& mapSettingsRet,
                     map<string, vector<string> >& mapMultiSettingsRet)
 {
+
     boost::filesystem::ifstream streamConfig(GetConfigFile());
     if (!streamConfig.good())
         throw missing_zcash_conf();
-
     set<string> setOptions;
     setOptions.insert("*");
 

@@ -46,10 +46,11 @@
 #include <thread>
 
 #include "paymentdisclosuredb.h"
+int32_t komodo_blockheight(uint256 hash);
 
 using namespace libzcash;
 
-extern UniValue sendrawtransaction(const UniValue& params, bool fHelp);
+extern UniValue sendrawtransaction(const UniValue& params, bool fHelp, const CPubKey& mypk);
 
 int mta_find_output(UniValue obj, int n)
 {
@@ -402,7 +403,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
         if (!testmode) {
             UniValue params = UniValue(UniValue::VARR);
             params.push_back(signedtxn);
-            UniValue sendResultValue = sendrawtransaction(params, false);
+            UniValue sendResultValue = sendrawtransaction(params, false, CPubKey());
             if (sendResultValue.isNull()) {
                 throw JSONRPCError(RPC_WALLET_ERROR, "sendrawtransaction did not return an error or a txid.");
             }
@@ -677,7 +678,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
                 if (mapBlockIndex.find(wtx.hashBlock) == mapBlockIndex.end()) {
                     throw JSONRPCError(RPC_WALLET_ERROR, strprintf("mapBlockIndex does not contain block hash %s", wtx.hashBlock.ToString()));
                 }
-                wtxHeight = mapBlockIndex[wtx.hashBlock]->GetHeight();
+                wtxHeight = komodo_blockheight(wtx.hashBlock);
                 wtxDepth = wtx.GetDepthInMainChain();
             }
             LogPrint("zrpcunsafe", "%s: spending note (txid=%s, vjoinsplit=%d, ciphertext=%d, amount=%s, height=%d, confirmations=%d)\n",
@@ -779,7 +780,7 @@ bool AsyncRPCOperation_mergetoaddress::main_impl()
 }
 
 
-extern UniValue signrawtransaction(const UniValue& params, bool fHelp);
+extern UniValue signrawtransaction(const UniValue& params, bool fHelp, const CPubKey& mypk);
 
 /**
  * Sign and send a raw transaction.
@@ -796,7 +797,7 @@ void AsyncRPCOperation_mergetoaddress::sign_send_raw_transaction(UniValue obj)
 
     UniValue params = UniValue(UniValue::VARR);
     params.push_back(rawtxn);
-    UniValue signResultValue = signrawtransaction(params, false);
+    UniValue signResultValue = signrawtransaction(params, false, CPubKey());
     UniValue signResultObject = signResultValue.get_obj();
     UniValue completeValue = find_value(signResultObject, "complete");
     bool complete = completeValue.get_bool();
@@ -816,7 +817,7 @@ void AsyncRPCOperation_mergetoaddress::sign_send_raw_transaction(UniValue obj)
         params.clear();
         params.setArray();
         params.push_back(signedtxn);
-        UniValue sendResultValue = sendrawtransaction(params, false);
+        UniValue sendResultValue = sendrawtransaction(params, false, CPubKey());
         if (sendResultValue.isNull()) {
             throw JSONRPCError(RPC_WALLET_ERROR, "Send raw transaction did not return an error or a txid.");
         }
