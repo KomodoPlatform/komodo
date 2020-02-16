@@ -25,7 +25,8 @@ def load_env_config():
         for i in range(tp.get('clients_to_start')):
             test_wif_list.append(os.environ["TEST_WIF" + str(i)])
             test_addr_list.append(os.environ["TEST_ADDY" + str(i)])
-            test_pubkey_list.append(os.environ["TEST_PUBKEY" + str(i)])
+            if os.environ['CHAIN_MODE'] not in ['DEX1', 'DEX2']:
+                test_pubkey_list.append(os.environ["TEST_PUBKEY" + str(i)])
         tp.update({'test_wif': test_wif_list})
         tp.update({'test_address': test_addr_list})
         tp.update({'test_pubkey': test_pubkey_list})
@@ -51,6 +52,10 @@ def load_ac_params(asset, chain_mode='default'):
         ac.update({'binary_path': binary_path})
         if chain_mode == 'REGTEST':
             ac.update({'daemon_params': ['-daemon', '-whitelist=127.0.0.1', '-regtest']})
+        elif chain_mode == 'DEX1':
+            ac.update({'daemon_params': ['-daemon', '-whitelist=127.0.0.1', '-dexp2p=1']})
+        elif chain_mode == 'DEX2':
+            ac.update({'daemon_params': ['-daemon', '-whitelist=127.0.0.1', '-dexp2p=2']})
         else:
             ac.update({'daemon_params': ['-daemon', '-whitelist=127.0.0.1']})
     else:
@@ -86,6 +91,7 @@ def main():
             wget.download(env_params.get('bootstrap_url'), "bootstrap.tar.gz")
         tf = tarfile.open("bootstrap.tar.gz")
         for i in range(clients_to_start):
+            create_configs(aschain, i)
             tf.extractall("node_" + str(i))
     mode = env_params.get('chain_start_mode')
     ac_params = load_ac_params(aschain, mode)
@@ -113,6 +119,26 @@ def main():
                     cl_args.append('-' + key + '=' + str(data))
                 else:
                     cl_args.append('-' + key + '=' + str(ac_params.get(key)))
+                   # '-pubkey=' + env_params.get('test_pubkey')[i],
+                   ]
+        try:
+            pubkey = env_params.get('test_pubkey')[i]
+            cl_args.append('-pubkey=' + pubkey)
+        except IndexError:
+            pass
+        if i == 0:
+            for key in ac_params.keys():
+                if key not in ['binary_path', 'daemon_params', 'rpc_user', 'rpcpassword'] and ac_params.get(key):
+                    cl_args.append('-' + key + '=' + str(ac_params.get(key)))
+        else:
+            cl_args.append('-addnode=127.0.0.1:' + str(ac_params.get('port')))
+            for key in ac_params.keys():
+                if key not in ['binary_path', 'daemon_params', 'rpc_user', 'rpcpassword'] and ac_params.get(key):
+                    if isinstance(ac_params.get(key), int):
+                        data = ac_params.get(key) + i
+                        cl_args.append('-' + key + '=' + str(data))
+                    else:
+                        cl_args.append('-' + key + '=' + str(ac_params.get(key)))
         cl_args.extend(ac_params.get('daemon_params'))
         print(cl_args)
         if os.name == "posix":
