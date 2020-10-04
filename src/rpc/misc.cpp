@@ -207,6 +207,7 @@ UniValue getinfo(const UniValue& params, bool fHelp, const CPubKey& mypk)
             "  \"blocks\": xxxxxx,           (numeric) the current number of blocks processed in the server\n"
             "  \"timeoffset\": xxxxx,        (numeric) the time offset (deprecated; always 0)\n"
             "  \"connections\": xxxxx,       (numeric) the number of connections\n"
+            "  \"tls_connections\": xxxxx,   (numeric) the number of TLS connections\n"
             "  \"proxy\": \"host:port\",     (string, optional) the proxy used by the server\n"
             "  \"difficulty\": xxxxxx,       (numeric) the current difficulty\n"
             "  \"testnet\": true|false,      (boolean) if the server is using testnet or not\n"
@@ -288,6 +289,7 @@ UniValue getinfo(const UniValue& params, bool fHelp, const CPubKey& mypk)
     }
     obj.push_back(Pair("timeoffset",    0));
     obj.push_back(Pair("connections",   (int)vNodes.size()));
+    obj.push_back(Pair("tls_connections", (int)std::count_if(vNodes.begin(), vNodes.end(), [](CNode* n) {return n->ssl != NULL;})));
     obj.push_back(Pair("proxy",         (proxy.IsValid() ? proxy.proxy.ToStringIPPort() : string())));
     obj.push_back(Pair("testnet",       Params().TestnetToBeDeprecatedFieldRPC()));
     obj.push_back(Pair("relayfee",      ValueFromAmount(::minRelayTxFee.GetFeePerK())));
