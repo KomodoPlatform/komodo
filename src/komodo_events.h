@@ -22,7 +22,7 @@ struct komodo_event *komodo_eventadd(struct komodo_state *sp,int32_t height,char
     struct komodo_event *ep=0; uint16_t len = (uint16_t)(sizeof(*ep) + datalen);
     if ( sp != 0 && ASSETCHAINS_SYMBOL[0] != 0 )
     {
-        portable_mutex_lock(&komodo_mutex);
+        std::lock_guard<std::mutex> lock(komodo_mutex);
         ep = (struct komodo_event *)calloc(1,len);
         ep->len = len;
         ep->height = height;
@@ -32,7 +32,6 @@ struct komodo_event *komodo_eventadd(struct komodo_state *sp,int32_t height,char
             memcpy(ep->space,data,datalen);
         sp->Komodo_events = (struct komodo_event **)realloc(sp->Komodo_events,(1 + sp->Komodo_numevents) * sizeof(*sp->Komodo_events));
         sp->Komodo_events[sp->Komodo_numevents++] = ep;
-        portable_mutex_unlock(&komodo_mutex);
     }
     return(ep);
 }
@@ -63,6 +62,14 @@ void komodo_eventadd_notarized(struct komodo_state *sp,char *symbol,int32_t heig
     }
 }
 
+/****
+ * Add a pubkey event to state
+ * @param sp the state
+ * @param symbol the symbol
+ * @param height
+ * @param num
+ * @param pubkeys
+ */
 void komodo_eventadd_pubkeys(struct komodo_state *sp,char *symbol,int32_t height,uint8_t num,uint8_t pubkeys[64][33])
 {
     struct komodo_event_pubkeys P;
