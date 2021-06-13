@@ -40,6 +40,7 @@
 #include <unistd.h>
 
 #include "komodo_defs.h"
+
 int64_t komodo_block_unlocktime(uint32_t nHeight);
 
 void AtomicTimer::start()
@@ -136,7 +137,7 @@ int64_t GetUptime()
 
 double GetLocalSolPS()
 {
-    if (ASSETCHAINS_ALGO == ASSETCHAINS_VERUSHASH || ASSETCHAINS_ALGO == ASSETCHAINS_VERUSHASHV1_1)
+    if (ASSETCHAINS_ALGO.algo == hash_algo::HASH_ALGO_VERUSHASH || ASSETCHAINS_ALGO.algo == hash_algo::HASH_ALGO_VERUSHASHV1_1)
     {
         return miningTimer.rate(nHashCount);
     }

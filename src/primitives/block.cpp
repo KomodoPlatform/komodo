@@ -53,19 +53,23 @@ uint256 CBlockHeader::GetVerusV2Hash() const
         return SerializeVerusHashV2(*this);
 }
 
-void CBlockHeader::SetSHA256DHash()
+void CBlockHeader::SetHashFunction(const hash_algorithm &in)
 {
-    CBlockHeader::hashFunction = &CBlockHeader::GetSHA256DHash;
-}
-
-void CBlockHeader::SetVerusHash()
-{
-    CBlockHeader::hashFunction = &CBlockHeader::GetVerusHash;
-}
-
-void CBlockHeader::SetVerusHashV2()
-{
-    CBlockHeader::hashFunction = &CBlockHeader::GetVerusV2Hash;
+    switch(in.algo)
+    {
+        case hash_algo::HASH_ALGO_VERUSHASH:
+            CVerusHash::init();
+            CVerusHashV2::init();
+            CBlockHeader::hashFunction = &CBlockHeader::GetVerusHash;
+            break;
+        case hash_algo::HASH_ALGO_VERUSHASHV1_1:
+            CVerusHash::init();
+            CVerusHashV2::init();
+            CBlockHeader::hashFunction = &CBlockHeader::GetVerusV2Hash;
+            break;
+        default:
+            CBlockHeader::hashFunction = &CBlockHeader::GetSHA256DHash;
+    }
 }
 
 // returns false if unable to fast calculate the VerusPOSHash from the header. 

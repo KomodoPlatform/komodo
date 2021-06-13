@@ -28,6 +28,7 @@
 #include "arith_uint256.h"
 
 extern int32_t ASSETCHAINS_LWMAPOS;
+class hash_algorithm;
 
 /** Nodes collect new transactions into a block, hash them into a hash tree,
  * and scan through nonce values to make the block's hash satisfy proof-of-work
@@ -96,17 +97,15 @@ public:
     }
 
     uint256 GetSHA256DHash() const;
-    static void SetSHA256DHash();
+    static void SetHashFunction(const hash_algorithm &algo_to_use);
 
     uint256 GetVerusHash() const;
-    static void SetVerusHash();
 
     bool GetRawVerusPOSHash(uint256 &ret, int32_t nHeight) const;
     bool GetVerusPOSHash(arith_uint256 &ret, int32_t nHeight, CAmount value) const; // value is amount of stake tx
     uint256 GetVerusEntropyHash(int32_t nHeight) const;
 
     uint256 GetVerusV2Hash() const;
-    static void SetVerusHashV2();
 
     int64_t GetBlockTime() const
     {

@@ -1531,7 +1531,7 @@ arith_uint256 komodo_PoWtarget(int32_t *percPoSp,arith_uint256 target,int32_t he
             return(easydiff);
     }    
     else 
-        easydiff.SetCompact(STAKING_MIN_DIFF,&fNegative,&fOverflow);
+        easydiff.SetCompact(ASSETCHAINS_ALGO.mindiff,&fNegative,&fOverflow);
     for (i=n=m=0; i<100; i++)
     {
         ht = height - 100 + i;
@@ -1560,10 +1560,7 @@ arith_uint256 komodo_PoWtarget(int32_t *percPoSp,arith_uint256 target,int32_t he
     if ( m+n < 100 )
     {
         // We do actual PoS % at the start. Requires coin distribution in first 10 blocks! 
-        if ( ASSETCHAINS_ALGO == ASSETCHAINS_VERUSHASH || ASSETCHAINS_ALGO == ASSETCHAINS_VERUSHASHV1_1 )
-            percPoS = (percPoS*100) / (m+n); 
-        else
-            percPoS = ((percPoS * n) + (goalperc * (100-n))) / 100;            
+        percPoS = ASSETCHAINS_ALGO.CalculatePercentPoS(percPoS, m, n, goalperc);
     } 
     if ( dispflag != 0 && ASSETCHAINS_STAKED < 100 )
         fprintf(stderr," -> %d%% percPoS vs goalperc.%d ht.%d\n",percPoS,goalperc,height);
@@ -1651,7 +1648,7 @@ uint32_t komodo_stake(int32_t validateflag,arith_uint256 bnTarget,int32_t nHeigh
     if ( value < SATOSHIDEN )
         return(0);
     value /= SATOSHIDEN;
-    mindiff.SetCompact(STAKING_MIN_DIFF,&fNegative,&fOverflow);
+    mindiff.SetCompact(ASSETCHAINS_ALGO.mindiff,&fNegative,&fOverflow);
     ratio = (mindiff / bnTarget);
     if ( (minage= nHeight*3) > 6000 ) // about 100 blocks
         minage = 6000;

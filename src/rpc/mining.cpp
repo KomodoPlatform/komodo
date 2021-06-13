@@ -486,7 +486,7 @@ UniValue getmininginfo(const UniValue& params, bool fHelp, const CPubKey& mypk)
     obj.push_back(Pair("difficulty",       (double)GetNetworkDifficulty()));
     obj.push_back(Pair("errors",           GetWarnings("statusbar")));
     obj.push_back(Pair("genproclimit",     (int)GetArg("-genproclimit", -1)));
-    if (ASSETCHAINS_ALGO == ASSETCHAINS_EQUIHASH)
+    if (ASSETCHAINS_ALGO.algo == hash_algo::HASH_ALGO_EQUIHASH)
     {
         obj.push_back(Pair("localsolps"  , getlocalsolps(params, false, mypk)));
         obj.push_back(Pair("networksolps", getnetworksolps(params, false, mypk)));

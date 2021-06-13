@@ -42,6 +42,7 @@
 #include <univalue.h>
 
 #include "zcash/Address.hpp"
+#include "komodo_algorithms.h"
 
 using namespace std;
 
@@ -81,7 +82,7 @@ int32_t komodo_notaries(uint8_t pubkeys[64][33],int32_t height,uint32_t timestam
 #define VERUS_VERSION "0.4.0g"
 extern uint16_t ASSETCHAINS_P2PPORT,ASSETCHAINS_RPCPORT;
 extern uint32_t ASSETCHAINS_CC;
-extern uint32_t ASSETCHAINS_MAGIC,ASSETCHAINS_ALGO;
+extern uint32_t ASSETCHAINS_MAGIC;
 extern uint64_t ASSETCHAINS_COMMISSION,ASSETCHAINS_SUPPLY;
 extern int32_t ASSETCHAINS_LWMAPOS,ASSETCHAINS_SAPLING,ASSETCHAINS_STAKED;
 extern uint64_t ASSETCHAINS_ENDSUBSIDY[],ASSETCHAINS_REWARD[],ASSETCHAINS_HALVING[],ASSETCHAINS_DECAY[],ASSETCHAINS_NOTARY_PAY[];
@@ -355,8 +356,8 @@ UniValue getinfo(const UniValue& params, bool fHelp, const CPubKey& mypk)
             obj.push_back(Pair("staked",        ASSETCHAINS_STAKED));
         if ( ASSETCHAINS_LWMAPOS != 0 )
             obj.push_back(Pair("veruspos", ASSETCHAINS_LWMAPOS));
-        if ( ASSETCHAINS_ALGO != ASSETCHAINS_EQUIHASH )
-            obj.push_back(Pair("algo",ASSETCHAINS_ALGORITHMS[ASSETCHAINS_ALGO]));
+        if ( ASSETCHAINS_ALGO.algo != hash_algo::HASH_ALGO_EQUIHASH )
+            obj.push_back(Pair("algo",ASSETCHAINS_ALGO.name.c_str()));
     }
     return obj;
 }
