@@ -81,9 +81,12 @@ using namespace std;
 #define TMPFILE_START 100000000
 CCriticalSection cs_main;
 extern uint8_t NOTARY_PUBKEY33[33];
-extern int32_t KOMODO_LOADINGBLOCKS,KOMODO_LONGESTCHAIN,KOMODO_INSYNC,KOMODO_CONNECTING,KOMODO_EXTRASATOSHI;
+extern bool KOMODO_LOADINGBLOCKS;
+extern int32_t KOMODO_LONGESTCHAIN,KOMODO_INSYNC;
+extern int32_t KOMODO_CONNECTING;
+extern int32_t KOMODO_EXTRASATOSHI;
 int32_t KOMODO_NEWBLOCKS;
-int32_t komodo_block2pubkey33(uint8_t *pubkey33,CBlock *block);
+bool komodo_block2pubkey33(uint8_t *pubkey33,CBlock *block);
 //void komodo_broadcast(CBlock *pblock,int32_t limit);
 bool Getscriptaddress(char *destaddr,const CScript &scriptPubKey);
 void komodo_setactivation(int32_t height);
@@ -252,7 +255,7 @@ namespace {
      *
      * Memory used: 1.7MB
      */
-    boost::scoped_ptr<CRollingBloomFilter> recentRejects;
+    std::unique_ptr<CRollingBloomFilter> recentRejects;
     uint256 hashRecentRejectsChainTip;
 
     /** Blocks that are in flight, and that are in the queue to be downloaded. Protected by cs_main. */
@@ -641,8 +644,8 @@ CBlockIndex* FindForkInGlobalIndex(const CChain& chain, const CBlockLocator& loc
     return chain.Genesis();
 }
 
-CCoinsViewCache *pcoinsTip = NULL;
-CBlockTreeDB *pblocktree = NULL;
+CCoinsViewCache *pcoinsTip = nullptr;
+CBlockTreeDB *pblocktree = nullptr;
 
 // Komodo globals
 
@@ -656,7 +659,7 @@ UniValue komodo_snapshot(int top)
     UniValue result(UniValue::VOBJ);
 
     if (fAddressIndex) {
-	    if ( pblocktree != 0 ) {
+	    if ( pblocktree != nullptr ) {
 		result = pblocktree->Snapshot(top);
 	    } else {
 		fprintf(stderr,"null pblocktree start with -addressindex=1\n");
@@ -669,7 +672,7 @@ UniValue komodo_snapshot(int top)
 
 bool komodo_snapshot2(std::map <std::string, CAmount> &addressAmounts)
 {
-    if ( fAddressIndex && pblocktree != 0 ) 
+    if ( fAddressIndex && pblocktree != nullptr ) 
     {
 		return pblocktree->Snapshot2(addressAmounts, 0);
     }
@@ -685,18 +688,19 @@ bool komodo_dailysnapshot(int32_t height)
     uint256 notarized_hash,notarized_desttxid; int32_t prevMoMheight,notarized_height,undo_height,extraoffset;
     // NOTE: To make this 100% safe under all sync conditions, it should be using a notarized notarization, from the DB. 
     // Under heavy reorg attack, its possible `komodo_notarized_height` can return a height that can't be found on chain sync.
-    // However, the DB can reorg the last notarization. By using 2 deep, we know 100% that the previous notarization cannot be reorged by online nodes,
-    // and as such will always be notarizing the same height. May need to check heights on scan back to make sure they are confirmed in correct order.
+    // However, the DB can reorg the last notarization. By using 2 deep, we know 100% that the previous notarization cannot be 
+    // reorged by online nodes, and as such will always be notarizing the same height. May need to check heights on scan back 
+    // to make sure they are confirmed in correct order.
     if ( (extraoffset= height % KOMODO_SNAPSHOT_INTERVAL) != 0 )
     {
-        // we are on chain init, and need to scan all the way back to the correct height, other wise our node will have a diffrent snapshot to online nodes.
-        // use the notarizationsDB to scan back from the consesnus height to get the offset we need.
+        // we are on chain init, and need to scan all the way back to the correct height, other wise our node will have a 
+        // diffrent snapshot to online nodes. Use the notarizationsDB to scan back from the consesnus height to get the 
+        // offset we need.
         std::string symbol; Notarisation nota;
         symbol.assign(ASSETCHAINS_SYMBOL);
         if ( ScanNotarisationsDB(height-extraoffset, symbol, 100, nota) == 0 )
             undo_height = height-extraoffset-reorglimit; 
         else undo_height = nota.second.height;
-        //fprintf(stderr, "height.%i-extraoffset.%i = startscanfrom.%i to get undo_height.%i\n", height, extraoffset, height-extraoffset, undo_height);
     }
     else 
     {
@@ -715,7 +719,6 @@ bool komodo_dailysnapshot(int32_t height)
     // undo blocks in reverse order
     for (int32_t n = height; n > undo_height; n--) 
     {
-        //fprintf(stderr, "undoing block.%i\n",n);
         CBlockIndex *pindex; CBlock block;
         if ( (pindex= komodo_chainactive(n)) == 0 || komodo_blockload(block, pindex) != 0 ) 
             return false;
@@ -733,7 +736,6 @@ bool komodo_dailysnapshot(int32_t height)
                     addressAmounts[CBitcoinAddress(vDest).ToString()] -= out.nValue;
                     if ( addressAmounts[CBitcoinAddress(vDest).ToString()] < 1 )
                         addressAmounts.erase(CBitcoinAddress(vDest).ToString());
-                    //fprintf(stderr, "VOUT: address.%s remove_coins.%li\n",CBitcoinAddress(vDest).ToString().c_str(), out.nValue);
                 } 
             }
             // loop vins in reverse order, get prevout and return the sent balance.
@@ -746,7 +748,6 @@ bool komodo_dailysnapshot(int32_t height)
                     int vout = tx.vin[j].prevout.n;
                     if ( ExtractDestination(txin.vout[vout].scriptPubKey, vDest) )
                     {
-                        //fprintf(stderr, "VIN: address.%s add_coins.%li\n",CBitcoinAddress(vDest).ToString().c_str(), txin.vout[vout].nValue);
                         addressAmounts[CBitcoinAddress(vDest).ToString()] += txin.vout[vout].nValue;
                     }
                 }
@@ -759,8 +760,6 @@ bool komodo_dailysnapshot(int32_t height)
         vAddressSnapshot.push_back(make_pair(element.second, DecodeDestination(element.first)));
     // sort the vector by amount, highest at top.
     std::sort(vAddressSnapshot.rbegin(), vAddressSnapshot.rend());
-    //for (int j = 0; j < 50; j++) 
-    //    fprintf(stderr, "j.%i address.%s nValue.%li\n",j, CBitcoinAddress(vAddressSnapshot[j].second).ToString().c_str(), vAddressSnapshot[j].first );
     // include only top 3999 address.
     if ( vAddressSnapshot.size() > 3999 ) vAddressSnapshot.resize(3999);
     lastSnapShotHeight = undo_height; 
@@ -1809,12 +1808,11 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
     if (pfMissingInputs)
         *pfMissingInputs = false;
     uint32_t tiptime;
-    int flag=0,nextBlockHeight = chainActive.Height() + 1;
+    int nextBlockHeight = chainActive.Height() + 1;
     auto consensusBranchId = CurrentEpochBranchId(nextBlockHeight, Params().GetConsensus());
     if ( nextBlockHeight <= 1 || chainActive.LastTip() == 0 )
         tiptime = (uint32_t)time(NULL);
     else tiptime = (uint32_t)chainActive.LastTip()->nTime;
-//fprintf(stderr,"addmempool 0\n");
     // Node operator can choose to reject tx by number of transparent inputs
     static_assert(std::numeric_limits<size_t>::max() >= std::numeric_limits<int64_t>::max(), "size_t too small");
     size_t limit = (size_t) GetArg("-mempooltxinputlimit", 0);
@@ -1828,7 +1826,6 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
             return false;
         }
     }
-//fprintf(stderr,"addmempool 1\n");
     auto verifier = libzcash::ProofVerifier::Strict();
     if ( ASSETCHAINS_SYMBOL[0] == 0 && komodo_validate_interest(tx,chainActive.LastTip()->GetHeight()+1,chainActive.LastTip()->GetMedianTimePast() + 777,0) < 0 )
     {
@@ -1847,8 +1844,7 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
     {
         return error("AcceptToMemoryPool: ContextualCheckTransaction failed");
     }
-//fprintf(stderr,"addmempool 2\n");
-  // Coinbase is only valid in a block, not as a loose transaction
+    // Coinbase is only valid in a block, not as a loose transaction
     if (tx.IsCoinBase())
     {
         fprintf(stderr,"AcceptToMemoryPool coinbase as individual tx\n");
@@ -1872,7 +1868,6 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
         //fprintf(stderr,"AcceptToMemoryPool reject non-final\n");
         return state.DoS(0, false, REJECT_NONSTANDARD, "non-final");
     }
-//fprintf(stderr,"addmempool 3\n");
     // is it already in the memory pool?
     uint256 hash = tx.GetHash();
     if (pool.exists(hash))
@@ -1907,7 +1902,6 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
             }
         }
     }
-//fprintf(stderr,"addmempool 4\n");
     {
         CCoinsView dummy;
         CCoinsViewCache view(&dummy);
@@ -2009,7 +2003,6 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
                 }
             }
         }
-//fprintf(stderr,"addmempool 5\n");
         // Grab the branch ID we expect this transaction to commit to. We don't
         // yet know if it does, but if the entry gets added to the mempool, then
         // it has passed ContextualCheckInputs and therefore this is correct.
@@ -2071,7 +2064,6 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
             LogPrint("mempool", errmsg.c_str());
             return state.Error("AcceptToMemoryPool: " + errmsg);
         }
-//fprintf(stderr,"addmempool 6\n");
 
         // Check against previous transactions
         // This is done last to help prevent CPU exhaustion denial-of-service attacks.
@@ -2092,20 +2084,21 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
         // invalid blocks, however allowing such transactions into the mempool
         // can be exploited as a DoS attack.
         // XXX: is this neccesary for CryptoConditions?
+        bool komodoConnectingSet = false;
         if ( KOMODO_CONNECTING <= 0 && chainActive.LastTip() != 0 )
         {
-            flag = 1;
+            // set KOMODO_CONNECTING so that ContextualCheckInputs works, (don't forget to reset)
+            komodoConnectingSet = true;
             KOMODO_CONNECTING = (1<<30) + (int32_t)chainActive.LastTip()->GetHeight() + 1;
         }
-//fprintf(stderr,"addmempool 7\n");
 
         if (!ContextualCheckInputs(tx, state, view, true, MANDATORY_SCRIPT_VERIFY_FLAGS, true, txdata, Params().GetConsensus(), consensusBranchId))
         {
-            if ( flag != 0 )
+            if ( komodoConnectingSet ) // undo what we did
                 KOMODO_CONNECTING = -1;
             return error("AcceptToMemoryPool: BUG! PLEASE REPORT THIS! ConnectInputs failed against MANDATORY but not STANDARD flags %s", hash.ToString());
         }
-        if ( flag != 0 )
+        if ( komodoConnectingSet )
             KOMODO_CONNECTING = -1;
 
         {
@@ -4278,7 +4271,6 @@ bool static ConnectTip(CValidationState &state, CBlockIndex *pindexNew, CBlock *
         pblock = &block;
     }
     KOMODO_CONNECTING = (int32_t)pindexNew->GetHeight();
-    //fprintf(stderr,"%s connecting ht.%d maxsize.%d vs %d\n",ASSETCHAINS_SYMBOL,(int32_t)pindexNew->GetHeight(),MAX_BLOCK_SIZE(pindexNew->GetHeight()),(int32_t)::GetSerializeSize(*pblock, SER_NETWORK, PROTOCOL_VERSION));
     // Get the current commitment tree
     SproutMerkleTree oldSproutTree;
     SaplingMerkleTree oldSaplingTree;
@@ -5153,8 +5145,6 @@ bool CheckBlock(int32_t *futureblockp,int32_t height,CBlockIndex *pindex,const C
         tiptime = (uint32_t)pindex->pprev->nTime;
     if ( fCheckPOW )
     {
-        //if ( !CheckEquihashSolution(&block, Params()) )
-        //    return state.DoS(100, error("CheckBlock: Equihash solution invalid"),REJECT_INVALID, "invalid-solution");
         komodo_block2pubkey33(pubkey33,(CBlock *)&block);
         if ( !CheckProofOfWork(block,pubkey33,height,Params().GetConsensus()) )
         {
@@ -6077,8 +6067,10 @@ CBlockIndex * InsertBlockIndex(uint256 hash)
     return pindexNew;
 }
 
-//void komodo_pindex_init(CBlockIndex *pindex,int32_t height);
-
+/****
+ * Load the block index database
+ * @returns true on success
+ */
 bool static LoadBlockIndexDB()
 {
     const CChainParams& chainparams = Params();
@@ -6091,16 +6083,14 @@ bool static LoadBlockIndexDB()
     // Calculate chainPower
     vector<pair<int, CBlockIndex*> > vSortedByHeight;
     vSortedByHeight.reserve(mapBlockIndex.size());
-    BOOST_FOREACH(const PAIRTYPE(uint256, CBlockIndex*)& item, mapBlockIndex)
+    for(const auto& item : mapBlockIndex)
     {
         CBlockIndex* pindex = item.second;
         vSortedByHeight.push_back(make_pair(pindex->GetHeight(), pindex));
-        //komodo_pindex_init(pindex,(int32_t)pindex->GetHeight());
     }
-    //fprintf(stderr,"load blockindexDB paired %u\n",(uint32_t)time(NULL));
     sort(vSortedByHeight.begin(), vSortedByHeight.end());
-    //fprintf(stderr,"load blockindexDB sorted %u\n",(uint32_t)time(NULL));
-    BOOST_FOREACH(const PAIRTYPE(int, CBlockIndex*)& item, vSortedByHeight)
+
+    for(const auto& item : vSortedByHeight)
     {
         CBlockIndex* pindex = item.second;
         pindex->chainPower = (pindex->pprev ? CChainPower(pindex) + pindex->pprev->chainPower : CChainPower(pindex)) + GetBlockProof(*pindex);
@@ -6153,9 +6143,7 @@ bool static LoadBlockIndexDB()
             pindex->BuildSkip();
         if (pindex->IsValid(BLOCK_VALID_TREE) && (pindexBestHeader == NULL || CBlockIndexWorkComparator()(pindexBestHeader, pindex)))
             pindexBestHeader = pindex;
-        //komodo_pindex_init(pindex,(int32_t)pindex->GetHeight());
     }
-    //fprintf(stderr,"load blockindexDB chained %u\n",(uint32_t)time(NULL));
 
     // Load block file info
     pblocktree->ReadLastBlockFile(nLastBlockFile);
@@ -6178,14 +6166,13 @@ bool static LoadBlockIndexDB()
     // Check presence of blk files
     LogPrintf("Checking all blk files are present...\n");
     set<int> setBlkDataFiles;
-    BOOST_FOREACH(const PAIRTYPE(uint256, CBlockIndex*)& item, mapBlockIndex)
+    for(const auto& item : mapBlockIndex)
     {
         CBlockIndex* pindex = item.second;
         if (pindex->nStatus & BLOCK_HAVE_DATA) {
             setBlkDataFiles.insert(pindex->nFile);
         }
     }
-    //fprintf(stderr,"load blockindexDB %u\n",(uint32_t)time(NULL));
     for (std::set<int>::iterator it = setBlkDataFiles.begin(); it != setBlkDataFiles.end(); it++)
     {
         CDiskBlockPos pos(*it, 0);
@@ -6220,7 +6207,7 @@ bool static LoadBlockIndexDB()
     LogPrintf("%s: spent index %s\n", __func__, fSpentIndex ? "enabled" : "disabled");
 
     // Fill in-memory data
-    BOOST_FOREACH(const PAIRTYPE(uint256, CBlockIndex*)& item, mapBlockIndex)
+    for(const auto& item : mapBlockIndex)
     {
         CBlockIndex* pindex = item.second;
         // - This relationship will always be true even if pprev has multiple
@@ -6231,7 +6218,6 @@ bool static LoadBlockIndexDB()
         if (pindex->pprev) {
             pindex->pprev->hashFinalSproutRoot = pindex->hashSproutAnchor;
         }
-        //komodo_pindex_init(pindex,(int32_t)pindex->GetHeight());
     }
 
     // Load pointer to end of best chain
@@ -6366,7 +6352,14 @@ bool CVerifyDB::VerifyDB(CCoinsView *coinsview, int nCheckLevel, int nCheckDepth
     return true;
 }
 
-bool RewindBlockIndex(const CChainParams& params, bool& clearWitnessCaches)
+/**
+ * When there are blocks in the active chain with missing data (e.g. if the
+ * activation height and branch ID of a particular upgrade have been altered),
+ * rewind the chainstate and remove them from the block index.
+ * @param params the chain parameters
+ * @returns true on success
+ */
+bool RewindBlockIndex(const CChainParams& params)
 {
     LOCK(cs_main);
 
@@ -6511,6 +6504,9 @@ bool RewindBlockIndex(const CChainParams& params, bool& clearWitnessCaches)
     return true;
 }
 
+/***
+ * Clear all values related to the block index
+ */
 void UnloadBlockIndex()
 {
     LOCK(cs_main);
@@ -6536,28 +6532,38 @@ void UnloadBlockIndex()
     mapNodeState.clear();
     recentRejects.reset(NULL);
 
-    BOOST_FOREACH(BlockMap::value_type& entry, mapBlockIndex) {
+    for(BlockMap::value_type& entry : mapBlockIndex) 
+    {
         delete entry.second;
     }
     mapBlockIndex.clear();
     fHavePruned = false;
 }
 
-bool LoadBlockIndex()
+/******
+ * @brief Load the block tree and coins database from disk
+ * @param reindex true if we will be reindexing (will skip the load if we are)
+ * @returns true on success
+ */
+bool LoadBlockIndex(bool reindex)
 {
     // Load block index from databases
-    KOMODO_LOADINGBLOCKS = 1;
-    if (!fReindex && !LoadBlockIndexDB())
+    KOMODO_LOADINGBLOCKS = true;
+    if (!reindex && !LoadBlockIndexDB())
     {
-        KOMODO_LOADINGBLOCKS = 0;
+        KOMODO_LOADINGBLOCKS = false;
         return false;
     }
     fprintf(stderr,"finished loading blocks %s\n",ASSETCHAINS_SYMBOL);
     return true;
 }
 
-
-bool InitBlockIndex() {
+/** 
+ * Initialize a new block tree database + block data on disk 
+ * @returns true on success
+ */
+bool InitBlockIndex() 
+{
     const CChainParams& chainparams = Params();
     LOCK(cs_main);
     tmpBlockFiles.clear();
@@ -6617,8 +6623,6 @@ bool InitBlockIndex() {
 
     return true;
 }
-
-
 
 bool LoadExternalBlockFile(FILE* fileIn, CDiskBlockPos *dbp)
 {
