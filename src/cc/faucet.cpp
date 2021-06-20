@@ -15,7 +15,6 @@
 
 #include "CCfaucet.h"
 #include "../txmempool.h"
-
 /*
  This file implements a simple CC faucet as an example of how to make a new CC contract. It wont have any fancy sybil protection but will serve the purpose of a fully automated faucet.
  
@@ -49,7 +48,7 @@ bool FaucetExactAmounts(struct CCcontract_info *cp,Eval* eval,const CTransaction
     for (i=0; i<numvins; i++)
     {
         //fprintf(stderr,"vini.%d\n",i);
-        if ( (*cp->ismyvin)(tx.vin[i].scriptSig) != 0 )
+        if ( cp->ismyvin(tx.vin[i].scriptSig) != 0 )
         {
             //fprintf(stderr,"vini.%d check mempool\n",i);
             if ( eval->GetTxUnconfirmed(tx.vin[i].prevout.hash,vinTx,hashBlock) == 0 )
@@ -141,6 +140,15 @@ bool FaucetValidate(struct CCcontract_info *cp,Eval* eval,const CTransaction &tx
 
 // helper functions for rpc calls in rpcwallet.cpp
 
+/******
+ * Add inputs
+ * @param cp the contract
+ * @param mtx the transaction
+ * @param pk the public key
+ * @param total
+ * @param maxinputs
+ * @returns the total of the inputs
+ */
 int64_t AddFaucetInputs(struct CCcontract_info *cp,CMutableTransaction &mtx,CPubKey pk,int64_t total,int32_t maxinputs)
 {
     char coinaddr[64]; int64_t threshold,nValue,price,totalinputs = 0; uint256 txid,hashBlock; std::vector<uint8_t> origpubkey; CTransaction vintx; int32_t vout,n = 0;
@@ -180,13 +188,15 @@ int64_t AddFaucetInputs(struct CCcontract_info *cp,CMutableTransaction &mtx,CPub
 UniValue FaucetGet(const CPubKey& pk, uint64_t txfee)
 {
     CMutableTransaction tmpmtx,mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
-    CPubKey faucetpk; int64_t inputs,CCchange=0,nValue=FAUCETSIZE; struct CCcontract_info *cp,C; std::string rawhex; uint32_t j; int32_t i,len; uint8_t buf[32768]; bits256 hash;
-    cp = CCinit(&C,EVAL_FAUCET);
+    CPubKey faucetpk; int64_t inputs,CCchange=0,nValue=FAUCETSIZE; 
+    std::string rawhex; uint32_t j; int32_t i,len; uint8_t buf[32768]; bits256 hash;
+    CCFaucetContract_info C;
+
     if ( txfee == 0 )
         txfee = 10000;
-    faucetpk = GetUnspendable(cp,0);
+    faucetpk = C.GetUnspendable();
     CPubKey mypk = pk.IsValid()?pk:pubkey2pk(Mypubkey());
-    if ( (inputs= AddFaucetInputs(cp,mtx,faucetpk,nValue+txfee,60)) > 0 )
+    if ( (inputs= AddFaucetInputs(&C,mtx,faucetpk,nValue+txfee,60)) > 0 )
     {
         if ( inputs > nValue )
             CCchange = (inputs - nValue - txfee);
@@ -198,7 +208,7 @@ UniValue FaucetGet(const CPubKey& pk, uint64_t txfee)
         for (i=0; i<1000000; i++,j++)
         {
             tmpmtx = mtx;
-            UniValue result = FinalizeCCTxExt(pk.IsValid (),-1LL,cp,tmpmtx,mypk,txfee,CScript() << OP_RETURN << E_MARSHAL(ss << (uint8_t)EVAL_FAUCET << (uint8_t)'G' << j));
+            UniValue result = FinalizeCCTxExt(pk.IsValid (),-1LL,&C,tmpmtx,mypk,txfee,CScript() << OP_RETURN << E_MARSHAL(ss << (uint8_t)EVAL_FAUCET << (uint8_t)'G' << j));
             if ( (len= (int32_t)result[JSON_HEXTX].getValStr().size()) > 0 && len < 65536 )
             {
                 len >>= 1;
@@ -219,33 +229,97 @@ UniValue FaucetGet(const CPubKey& pk, uint64_t txfee)
 UniValue FaucetFund(const CPubKey& pk, uint64_t txfee,int64_t funds)
 {
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
-    CPubKey faucetpk; CScript opret; struct CCcontract_info *cp,C;
+    CPubKey faucetpk; CScript opret; 
+    
+    CCFaucetContract_info C;
 
-    cp = CCinit(&C,EVAL_FAUCET);
     if ( txfee == 0 )
         txfee = 10000;
     CPubKey mypk = pk.IsValid()?pk:pubkey2pk(Mypubkey());
-    faucetpk = GetUnspendable(cp,0);
+    faucetpk = C.GetUnspendable();
     if ( AddNormalinputs(mtx,mypk,funds+txfee,64,pk.IsValid()) > 0 )
     {
         mtx.vout.push_back(MakeCC1vout(EVAL_FAUCET,funds,faucetpk));
-        return(FinalizeCCTxExt(pk.IsValid(),0,cp,mtx,mypk,txfee,opret));
+        return(FinalizeCCTxExt(pk.IsValid(),0,&C,mtx,mypk,txfee,opret));
     }
     CCERR_RESULT("faucet",CCLOG_ERROR, stream << "can't find normal inputs");
 }
 
 UniValue FaucetInfo()
 {
-    UniValue result(UniValue::VOBJ); char numstr[64];
+    CCFaucetContract_info C; 
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
-    CPubKey faucetpk; struct CCcontract_info *cp,C; int64_t funding;
+    CPubKey faucetpk = C.GetUnspendable();
+    int64_t funding = AddFaucetInputs(&C,mtx,faucetpk,0,0);
+    UniValue result(UniValue::VOBJ); 
     result.push_back(Pair("result","success"));
     result.push_back(Pair("name","Faucet"));
-    cp = CCinit(&C,EVAL_FAUCET);
-    faucetpk = GetUnspendable(cp,0);
-    funding = AddFaucetInputs(cp,mtx,faucetpk,0,0);
+    char numstr[64];
     sprintf(numstr,"%.8f",(double)funding/COIN);
     result.push_back(Pair("funding",numstr));
-    return(result);
+    return result;
 }
 
+bool CCFaucetContract_info::validate(Eval* eval, const CTransaction &tx, uint32_t nIn)
+{
+    int32_t numvins,numvouts,preventCCvins,preventCCvouts,i,numblocks; 
+    bool retval; 
+    uint256 txid; 
+    uint8_t hash[32]; 
+    char str[65],destaddr[64];
+    std::vector<std::pair<CAddressIndexKey, CAmount> > txids;
+    numvins = tx.vin.size();
+    numvouts = tx.vout.size();
+    preventCCvins = preventCCvouts = -1;
+    if ( numvouts < 1 )
+        return eval->Invalid("no vouts");
+    else
+    {
+        for (i=0; i<numvins; i++)
+        {
+            if ( IsCCInput(tx.vin[0].scriptSig) == 0 )
+            {
+                fprintf(stderr,"faucetget invalid vini\n");
+                return eval->Invalid("illegal normal vini");
+            }
+        }
+        //fprintf(stderr,"check amounts\n");
+        if ( FaucetExactAmounts(this,eval,tx,1,10000) == false )
+        {
+            fprintf(stderr,"faucetget invalid amount\n");
+            return false;
+        }
+        else
+        {
+            preventCCvouts = 1;
+            if ( IsFaucetvout(this,tx,0) != 0 )
+            {
+                preventCCvouts++;
+                i = 1;
+            } else i = 0;
+            txid = tx.GetHash();
+            memcpy(hash,&txid,sizeof(hash));
+            fprintf(stderr,"check faucetget txid %s %02x/%02x\n",uint256_str(str,txid),hash[0],hash[31]);
+            if ( tx.vout[i].nValue != FAUCETSIZE )
+                return eval->Invalid("invalid faucet output");
+            else if ( (hash[0] & 0xff) != 0 || (hash[31] & 0xff) != 0 )
+                return eval->Invalid("invalid faucetget txid");
+            Getscriptaddress(destaddr,tx.vout[i].scriptPubKey);
+            SetCCtxids(txids,destaddr,tx.vout[i].scriptPubKey.IsPayToCryptoCondition());
+            for (std::vector<std::pair<CAddressIndexKey, CAmount> >::const_iterator it=txids.begin(); it!=txids.end(); it++)
+            {
+                //int height = it->first.blockHeight;
+                if ( CCduration(numblocks,it->first.txhash) > 0 && numblocks > 3 )
+                {
+                    return eval->Invalid("faucet is only for brand new addresses");
+                }
+                //fprintf(stderr,"txid %s numblocks.%d ago\n",uint256_str(str,it->first.txhash),numblocks);
+            }
+            retval = PreventCC(eval,tx,preventCCvins,numvins,preventCCvouts,numvouts);
+            if ( retval != 0 )
+                fprintf(stderr,"faucetget validated\n");
+            else fprintf(stderr,"faucetget invalid\n");
+            return(retval);
+        }
+    }
+}    

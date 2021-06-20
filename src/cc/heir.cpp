@@ -106,21 +106,13 @@ template <typename Helper> bool RunValidationPlans(uint8_t funcId, struct CCcont
 /**
  * Tx validation entry function
  */
-bool HeirValidate(struct CCcontract_info* cpHeir, Eval* eval, const CTransaction& tx, uint32_t nIn)
+bool CCHeirContract_info::validate(Eval* eval, const CTransaction& tx, uint32_t nIn)
 {
     int32_t numvins = tx.vin.size();
     int32_t numvouts = tx.vout.size();
-    //int32_t preventCCvins = -1;
-    //int32_t preventCCvouts = -1;
-    
-    struct CCcontract_info *cpTokens, tokensC;
-    cpTokens = CCinit(&tokensC, EVAL_TOKENS);
     
     if (numvouts < 1)
         return eval->Invalid("no vouts");
-    
-    //if (chainActive.Height() < 741)
-    //	return true;
     
     uint256 fundingTxidInOpret = zeroid, latestTxid = zeroid, dummyTokenid, tokenidThis, tokenid = zeroid;
     
@@ -149,10 +141,9 @@ bool HeirValidate(struct CCcontract_info* cpHeir, Eval* eval, const CTransaction
         fundingTxOpRetScript = opret;
     }
     
-    std::cerr << "HeirValidate funcid=" << (char)funcId << " evalcode=" << (int)cpHeir->evalcode << std::endl;
+    std::cerr << "HeirValidate funcid=" << (char)funcId << " evalcode=" << (int)evalcode << std::endl;
     
-    //////////////// temp ////////////////////////
-    ///return true;
+    CCTokensContract_info tokensC;
     
     switch (funcId) {
         case 'F':
@@ -173,7 +164,7 @@ bool HeirValidate(struct CCcontract_info* cpHeir, Eval* eval, const CTransaction
             // vout.2: normal change
             // vout.n-1: opreturn 't' tokenid 'F' ownerpk heirpk inactivitytime heirname tokenid
             if (tokenid != zeroid)
-                return RunValidationPlans<TokenHelper>(funcId, cpTokens, eval, tx, latestTxid, fundingTxOpRetScript, hasHeirSpendingBegun);
+                return RunValidationPlans<TokenHelper>(funcId, &tokensC, eval, tx, latestTxid, fundingTxOpRetScript, hasHeirSpendingBegun);
             else
                 return eval->Invalid("unexpected HeirValidate for heirfund");
             // break;
@@ -194,7 +185,7 @@ bool HeirValidate(struct CCcontract_info* cpHeir, Eval* eval, const CTransaction
             // vout.1: normal change
             // vout.n-1: opreturn 't' tokenid 'A' ownerpk heirpk inactivitytime fundingtx
             if (tokenid != zeroid)
-                return RunValidationPlans<TokenHelper>(funcId, cpTokens, eval, tx, latestTxid, fundingTxOpRetScript, hasHeirSpendingBegun);
+                return RunValidationPlans<TokenHelper>(funcId, &tokensC, eval, tx, latestTxid, fundingTxOpRetScript, hasHeirSpendingBegun);
             else
                 return eval->Invalid("unexpected HeirValidate for heiradd");
             //break;
@@ -218,9 +209,9 @@ bool HeirValidate(struct CCcontract_info* cpHeir, Eval* eval, const CTransaction
             // vout.2: change to normal from txfee input if any
             // vout.n-1: opreturn 't' tokenid 'C' ownerpk heirpk inactivitytime fundingtx
             if (tokenid != zeroid)
-                return RunValidationPlans<TokenHelper>(funcId, cpTokens, eval, tx, latestTxid, fundingTxOpRetScript, hasHeirSpendingBegun);
+                return RunValidationPlans<TokenHelper>(funcId, &tokensC, eval, tx, latestTxid, fundingTxOpRetScript, hasHeirSpendingBegun);
             else
-                return RunValidationPlans<CoinHelper>(funcId, cpHeir, eval, tx, latestTxid, fundingTxOpRetScript, hasHeirSpendingBegun);
+                return RunValidationPlans<CoinHelper>(funcId, this, eval, tx, latestTxid, fundingTxOpRetScript, hasHeirSpendingBegun);
             // break;
             
         default:
@@ -424,10 +415,9 @@ uint256 _FindLatestFundingTx(uint256 fundingtxid, uint8_t& funcId, uint256 &toke
     
     // TODO: correct cc addr:
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue>> unspentOutputs;
-    struct CCcontract_info *cp, C;
-    cp = CCinit(&C, EVAL_HEIR);
+    CCHeirContract_info C;
     char coinaddr[64];
-    GetCCaddress1of2(cp, coinaddr, ownerPubkey, heirPubkey); // get the address of cryptocondition '1 of 2 pubkeys'
+    GetCCaddress1of2(&C, coinaddr, ownerPubkey, heirPubkey); // get the address of cryptocondition '1 of 2 pubkeys'
     
     SetCCunspents(unspentOutputs, coinaddr,true);				 // get vector with tx's with unspent vouts of 1of2pubkey address:
     //std::cerr << "FindLatestFundingTx() using 1of2address=" << coinaddr << " unspentOutputs.size()=" << unspentOutputs.size() << '\n';
@@ -616,9 +606,7 @@ template <typename Helper> UniValue _HeirFund(int64_t txfee, int64_t amount, std
 {
     UniValue result(UniValue::VOBJ);
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
-    struct CCcontract_info *cp, C;
     
-    cp = CCinit(&C, Helper::getMyEval());
     if (txfee == 0)
         txfee = 10000;
 
@@ -647,9 +635,8 @@ template <typename Helper> UniValue _HeirFund(int64_t txfee, int64_t amount, std
             
         // add a marker for finding all plans in HeirList()
         // TODO: change marker either to cc or normal txidaddr unspendable
-		struct CCcontract_info *cpHeir, heirC;  
-		cpHeir = CCinit(&heirC, EVAL_HEIR);
-        CPubKey heirUnspendablePubKey = GetUnspendable(cpHeir, 0);
+		CCHeirContract_info heirC;  
+        CPubKey heirUnspendablePubKey = heirC.GetUnspendable();
         // mtx.vout.push_back(CTxOut(txfee, CScript() << ParseHex(HexStr(heirUnspendablePubKey)) << OP_CHECKSIG));  <-- bad marker cause it was spendable by anyone
 		mtx.vout.push_back(MakeCC1vout(EVAL_HEIR, markerfee, heirUnspendablePubKey));		// this marker spending is disabled in the validation code
             
@@ -684,8 +671,10 @@ template <typename Helper> UniValue _HeirFund(int64_t txfee, int64_t amount, std
         voutTokenPubkeys.push_back(myPubkey);
         voutTokenPubkeys.push_back(heirPubkey);
             
+        std::shared_ptr<CCcontract_info> cp = CCinit(Helper::getMyEval());
+
         // add change for txfee and opreturn vouts and sign tx:
-        std::string rawhextx = FinalizeCCTx(0, cp, mtx, myPubkey, txfee,
+        std::string rawhextx = FinalizeCCTx(0, cp.get(), mtx, myPubkey, txfee,
                                             Helper::makeCreateOpRet(tokenid, voutTokenPubkeys, myPubkey, heirPubkey, inactivityTimeSec, heirName, memo));
         if (!rawhextx.empty()) {
             result.push_back(Pair("result", "success"));
@@ -723,10 +712,7 @@ template <class Helper> UniValue _HeirAdd(uint256 fundingtxid, int64_t txfee, in
 {
     UniValue result(UniValue::VOBJ);
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
-    struct CCcontract_info *cp, C;
     std::string rawhex;
-    
-    cp = CCinit(&C, Helper::getMyEval());  // for tokens shoud be EVAL_TOKENS to sign it correctly!
     
     if (txfee == 0)
         txfee = 10000;
@@ -810,8 +796,9 @@ template <class Helper> UniValue _HeirAdd(uint256 fundingtxid, int64_t txfee, in
         voutTokenPubkeys.push_back(ownerPubkey);
         voutTokenPubkeys.push_back(heirPubkey);
             
+        std::shared_ptr<CCcontract_info> cp = CCinit(Helper::getMyEval());  // for tokens shoud be EVAL_TOKENS to sign it correctly!
         // add opreturn 'A'  and sign tx:						
-        std::string rawhextx = (FinalizeCCTx(0, cp, mtx, myPubkey, txfee,
+        std::string rawhextx = (FinalizeCCTx(0, cp.get(), mtx, myPubkey, txfee,
                                                 Helper::makeAddOpRet(tokenid, voutTokenPubkeys, fundingtxid, hasHeirSpendingBegun)));
             
         if (!rawhextx.empty()) {
@@ -890,9 +877,7 @@ template <typename Helper>UniValue _HeirClaim(uint256 fundingtxid, int64_t txfee
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
     CPubKey myPubkey;
     int64_t inputs, change = 0;
-    struct CCcontract_info *cp, C;
     
-    cp = CCinit(&C, EVAL_HEIR);
     if (txfee == 0)
         txfee = 10000;
     
@@ -926,10 +911,11 @@ template <typename Helper>UniValue _HeirClaim(uint256 fundingtxid, int64_t txfee
      }	*/
     
     // add spending txfee from the calling user
-    if (AddNormalinputs(mtx, myPubkey, txfee, 3) > 0) {
-        
+    if (AddNormalinputs(mtx, myPubkey, txfee, 3) > 0) 
+    {
+        CCHeirContract_info C;    
         // add spending from cc 1of2 address
-        if ((inputs = Add1of2AddressInputs<Helper>(cp, fundingtxid, mtx, ownerPubkey, heirPubkey, amount, 60)) >= amount) // TODO: why only 60 inputs?
+        if ((inputs = Add1of2AddressInputs<Helper>(&C, fundingtxid, mtx, ownerPubkey, heirPubkey, amount, 60)) >= amount) // TODO: why only 60 inputs?
         {
             /*if (inputs < amount) {
              std::cerr << "HeirClaim() cant find enough HeirCC 1of2 inputs, found=" << inputs << " required=" << amount << std::endl;
@@ -969,7 +955,7 @@ template <typename Helper>UniValue _HeirClaim(uint256 fundingtxid, int64_t txfee
             Myprivkey(myprivkey);
             
             // set pubkeys for finding 1of2 cc in FinalizeCCtx to sign it:
-            Helper::CCaddrCoinsOrTokens1of2set(cp, ownerPubkey, heirPubkey, coinaddr);
+            Helper::CCaddrCoinsOrTokens1of2set(&C, ownerPubkey, heirPubkey, coinaddr);
             
             // add 1of2 vout validation pubkeys (this is for tokens):
             std::vector<CPubKey> voutTokenPubkeys;
@@ -977,7 +963,7 @@ template <typename Helper>UniValue _HeirClaim(uint256 fundingtxid, int64_t txfee
             voutTokenPubkeys.push_back(heirPubkey);
             
             // add opreturn 'C' and sign tx:				  // this txfee will be ignored
-            std::string rawhextx = FinalizeCCTx(0, cp, mtx, myPubkey, txfee,
+            std::string rawhextx = FinalizeCCTx(0, &C, mtx, myPubkey, txfee,
                                                 Helper::makeClaimOpRet(tokenid, voutTokenPubkeys, fundingtxid, (myPubkey == heirPubkey) ? 1 : hasHeirSpendingBegun)); // forward isHeirSpending to the next latest tx
             
             memset(myprivkey,0,sizeof(myprivkey));
@@ -1091,8 +1077,7 @@ UniValue HeirInfo(uint256 fundingtxid)
          return result;
          }*/
         
-        struct CCcontract_info *cp, C;
-        cp = CCinit(&C, EVAL_HEIR);
+        CCHeirContract_info C;
         
         uint8_t hasHeirSpendingBegun = 0;
         
@@ -1133,9 +1118,9 @@ UniValue HeirInfo(uint256 fundingtxid)
             
             int64_t total;
             if (tokenid == zeroid)
-                total = LifetimeHeirContractFunds<CoinHelper>(cp, fundingtxid, ownerPubkey, heirPubkey);
+                total = LifetimeHeirContractFunds<CoinHelper>(&C, fundingtxid, ownerPubkey, heirPubkey);
             else
-                total = LifetimeHeirContractFunds<TokenHelper>(cp, fundingtxid, ownerPubkey, heirPubkey);
+                total = LifetimeHeirContractFunds<TokenHelper>(&C, fundingtxid, ownerPubkey, heirPubkey);
             
 			msg = "type";
 			if (tokenid == zeroid) {
@@ -1161,9 +1146,9 @@ UniValue HeirInfo(uint256 fundingtxid)
             
             int64_t inputs;
             if (tokenid == zeroid)
-                inputs = Add1of2AddressInputs<CoinHelper>(cp, fundingtxid, mtx, ownerPubkey, heirPubkey, 0, 60); //NOTE: amount = 0 means all unspent inputs
+                inputs = Add1of2AddressInputs<CoinHelper>(&C, fundingtxid, mtx, ownerPubkey, heirPubkey, 0, 60); //NOTE: amount = 0 means all unspent inputs
             else
-                inputs = Add1of2AddressInputs<TokenHelper>(cp, fundingtxid, mtx, ownerPubkey, heirPubkey, 0, 60);
+                inputs = Add1of2AddressInputs<TokenHelper>(&C, fundingtxid, mtx, ownerPubkey, heirPubkey, 0, 60);
             
 			msg = "available";
             if (tokenid == zeroid) {
@@ -1234,7 +1219,7 @@ void _HeirList(struct CCcontract_info *cp, UniValue &result)
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue>> unspentOutputs;
     char markeraddr[64];
 
-	GetCCaddress(cp, markeraddr, GetUnspendable(cp, NULL));
+	GetCCaddress(cp, markeraddr, cp->GetUnspendable());
     SetCCunspents(unspentOutputs, markeraddr,true);
     
     //std::cerr << "HeirList() finding heir marker from unspendable addr=" << markeraddr << " unspentOutputs.size()=" << unspentOutputs.size() << '\n';
@@ -1274,17 +1259,10 @@ void _HeirList(struct CCcontract_info *cp, UniValue &result)
     }
 }
 
-
 UniValue HeirList()
 {
     UniValue result(UniValue::VARR);
-    //result.push_back(Pair("result", "success"));
-	//result.push_back(Pair("name", "Heir List"));
-    
-    struct CCcontract_info *cpHeir, heirC; 
-    
-    cpHeir = CCinit(&heirC, EVAL_HEIR);
-    _HeirList(cpHeir, result);
-    
+    CCHeirContract_info heirC; 
+    _HeirList(&heirC, result);
     return result;
 }

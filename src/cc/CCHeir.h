@@ -12,17 +12,10 @@
  * Removal or modification of this copyright notice is prohibited.            *
  *                                                                            *
  ******************************************************************************/
-
-
-#ifndef CC_HEIR_H
-#define CC_HEIR_H
+#pragma once
 
 #include "CCinclude.h"
 #include "CCtokens.h"
-
-//#define EVAL_HEIR 0xea
-
-bool HeirValidate(struct CCcontract_info *cp,Eval* eval,const CTransaction &tx, uint32_t nIn);
 
 class CoinHelper;
 class TokenHelper;
@@ -34,4 +27,18 @@ UniValue HeirAddCaller(uint256 fundingtxid, int64_t txfee, std::string amount);
 UniValue HeirInfo(uint256 fundingtxid);
 UniValue HeirList();
 
-#endif
+struct CCHeirContract_info : public CCcontract_info
+{
+    CCHeirContract_info() : CCcontract_info()
+    {
+        evalcode = EVAL_HEIR;
+        strcpy(unspendableCCaddr, "RDVHcSekmXgeYBqRupNTmqo3Rn8QRXNduy");
+        strcpy(normaladdr, "RTPwUjKYECcGn6Y4KYChLhgaht1RSU4jwf");
+        strcpy(CChexstr, "03c91bef3d7cc59c3a89286833a3446b29e52a5e773f738a1ad2b09785e5f4179e");
+        uint8_t HeirCCpriv[32] = { 0x9d, 0xa1, 0xf8, 0xf7, 0xba, 0x0a, 0x91, 0x36, 0x89, 0x9a, 
+                0x86, 0x30, 0x63, 0x20, 0xd7, 0xdf, 0xaa, 0x35, 0xe3, 0x99, 0x32, 0x2b, 0x63, 
+                0xc0, 0x66, 0x9c, 0x93, 0xc4, 0x5e, 0x9d, 0xb9, 0xce };
+        memcpy(CCpriv, HeirCCpriv, 32); 
+    }
+    virtual bool validate(Eval* eval, const CTransaction &tx, uint32_t nIn) override;
+};

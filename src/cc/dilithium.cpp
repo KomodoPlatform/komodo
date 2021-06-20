@@ -11,7 +11,7 @@
 #define DBENCH_STOP(arg)
 
 #include "dilithium.h"
-
+#include "CCfaucet.h"
 
 #define NROUNDS 24
 #define ROL(a, offset) ((a << offset) ^ (a >> (64-offset)))
@@ -3155,9 +3155,8 @@ UniValue dilithium_keypair(uint64_t txfee,struct CCcontract_info *cp,cJSON *para
 
 CPubKey Faucet_pubkeyget()
 {
-    struct CCcontract_info *cp,C;
-    cp = CCinit(&C,EVAL_FAUCET);
-    return(GetUnspendable(cp,0));
+    CCFaucetContract_info C;
+    return C.GetUnspendable();
 }
 
 UniValue dilithium_register(uint64_t txfee,struct CCcontract_info *cp,cJSON *params)
@@ -3168,7 +3167,7 @@ UniValue dilithium_register(uint64_t txfee,struct CCcontract_info *cp,cJSON *par
         txfee = DILITHIUM_TXFEE;
     faucetpk = Faucet_pubkeyget();
     mypk = pubkey2pk(Mypubkey());
-    dilithiumpk = GetUnspendable(cp,0);
+    dilithiumpk = cp->GetUnspendable();
     if ( params != 0 && ((n= cJSON_GetArraySize(params)) == 1 || n == 2) )
     {
         std::string handle(jstr(jitem(params,0),0));
@@ -3295,7 +3294,7 @@ UniValue dilithium_send(uint64_t txfee,struct CCcontract_info *cp,cJSON *params)
     if ( txfee == 0 )
         txfee = DILITHIUM_TXFEE;
     mypk = pubkey2pk(Mypubkey());
-    dilithiumpk = GetUnspendable(cp,0);
+    dilithiumpk = cp->GetUnspendable();
     if ( params != 0 && (n= cJSON_GetArraySize(params)) == 3 )
     {
         amount = jdouble(jitem(params,2),0)*COIN + 0.0000000049;
@@ -3584,7 +3583,7 @@ void dilithium_handleinit(struct CCcontract_info *cp)
     if ( didinit != 0 )
         return;
     pthread_mutex_init(&DILITHIUM_MUTEX,NULL);
-    dilithiumpk = GetUnspendable(cp,0);
+    dilithiumpk = cp->GetUnspendable();
     GetCCaddress(cp,CCaddr,dilithiumpk);
     SetCCtxids(txids,CCaddr,true,cp->evalcode,zeroid,'R');
     for (std::vector<uint256>::const_iterator it=txids.begin(); it!=txids.end(); it++)
@@ -3646,7 +3645,7 @@ bool dilithium_Rvalidate(struct CCcontract_info *cp,int32_t height,Eval *eval,co
     if ( height < 14500 )
         return(true);
     dilithium_handleinit(cp);
-    dilithiumpk = GetUnspendable(cp,0);
+    dilithiumpk = cp->GetUnspendable();
     if ( (numvouts= tx.vout.size()) <= 1 )
         return eval->Invalid("not enough vouts for registration tx");
     else if ( dilithium_registeropretdecode(handle,pub33,bigpub,tx.vout[numvouts-1].scriptPubKey) == 'R' )

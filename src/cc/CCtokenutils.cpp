@@ -1,5 +1,5 @@
 /******************************************************************************
-* Copyright © 2014-2019 The SuperNET Developers.                             *
+* Copyright ï¿½ 2014-2019 The SuperNET Developers.                             *
 *                                                                            *
 * See the AUTHORS, DEVELOPER-AGREEMENT and LICENSE files at                  *
 * the top-level directory of this distribution for the individual copyright  *
@@ -178,19 +178,13 @@ uint8_t DecodeTokenCreateOpRet(const CScript &scriptPubKey, std::vector<uint8_t>
 // decode token opret: 
 // for 't' returns all data from opret, vopretExtra contains other contract's data (currently only assets'). 
 // for 'c' returns only funcid. NOTE: nonfungible data is not returned
-uint8_t DecodeTokenOpRet(const CScript scriptPubKey, uint8_t &evalCodeTokens, uint256 &tokenid, std::vector<CPubKey> &voutPubkeys, std::vector<std::pair<uint8_t, vscript_t>>  &oprets)
+uint8_t DecodeTokenOpRet(const CScript scriptPubKey, uint8_t &evalCodeTokens, uint256 &tokenid, 
+        std::vector<CPubKey> &voutPubkeys, std::vector<std::pair<uint8_t, vscript_t>>  &oprets)
 {
-    vscript_t vopret, vblob, dummyPubkey, vnonfungibleDummy;
-    uint8_t funcId = 0, *script, dummyEvalCode, dummyFuncId, ccType, opretId = 0;
-    std::string dummyName; std::string dummyDescription;
-    uint256 dummySrcTokenId;
-    CPubKey voutPubkey1, voutPubkey2;
-
-    vscript_t voldstyledata;
-    bool foundOldstyle = false;
-
+    vscript_t vopret;
     GetOpReturnData(scriptPubKey, vopret);
-    script = (uint8_t *)vopret.data();
+
+    uint8_t *script = (uint8_t *)vopret.data();
     tokenid = zeroid;
     oprets.clear();
 
@@ -198,73 +192,87 @@ uint8_t DecodeTokenOpRet(const CScript scriptPubKey, uint8_t &evalCodeTokens, ui
     {
         evalCodeTokens = script[0];
         if (evalCodeTokens != EVAL_TOKENS) {
-            LOGSTREAM((char *)"cctokens", CCLOG_INFO, stream << "DecodeTokenOpRet() incorrect evalcode in tokens opret" << std::endl);
+            LOGSTREAM((char *)"cctokens", CCLOG_INFO, 
+                    stream << "DecodeTokenOpRet() incorrect evalcode in tokens opret" << std::endl);
             return (uint8_t)0;
         }
 
-        funcId = script[1];
-        LOGSTREAM((char *)"cctokens", CCLOG_DEBUG2, stream << "DecodeTokenOpRet() decoded funcId=" << (char)(funcId ? funcId : ' ') << std::endl);
+        uint8_t funcId = script[1];
+        LOGSTREAM((char *)"cctokens", CCLOG_DEBUG2, stream << "DecodeTokenOpRet() decoded funcId=" 
+                << (char)(funcId ? funcId : ' ') << std::endl);
 
         switch (funcId)
         {
         case 'c':
-            return DecodeTokenCreateOpRet(scriptPubKey, dummyPubkey, dummyName, dummyDescription, oprets);
-
-        case 't':
-           
-            // compatibility with old-style rogue or assets data (with no opretid):
-            // try to unmarshal old-style rogue or assets data:
-            foundOldstyle = E_UNMARSHAL(vopret, ss >> dummyEvalCode; ss >> dummyFuncId; ss >> tokenid; ss >> ccType;
-                                        if (ccType >= 1) ss >> voutPubkey1;
-                                        if (ccType == 2) ss >> voutPubkey2;
-                                        if (!ss.eof()) {
-                                            ss >> voldstyledata;
-                                        }) && voldstyledata.size() >= 2 && 
-                                            (voldstyledata.begin()[0] == 0x11 /*EVAL_ROGUE*/ && IS_CHARINSTR(voldstyledata.begin()[1], "RHQKG")  ||
-                                             voldstyledata.begin()[0] == EVAL_ASSETS && IS_CHARINSTR(voldstyledata.begin()[1], "sbSBxo")) ;
-                
-            if (foundOldstyle ||  // fix for compatibility with old style data (no opretid)
-                E_UNMARSHAL(vopret, ss >> dummyEvalCode; ss >> dummyFuncId; ss >> tokenid; ss >> ccType;
-                    if (ccType >= 1) ss >> voutPubkey1;
-                    if (ccType == 2) ss >> voutPubkey2;
-                    while (!ss.eof()) {
-                        ss >> opretId;
-                        if (!ss.eof()) {
-                            ss >> vblob;
-                            oprets.push_back(std::make_pair(opretId, vblob));
-                        }
-                    }))
             {
-                if (!(ccType >= 0 && ccType <= 2)) { //incorrect ccType
-                    LOGSTREAM((char *)"cctokens", CCLOG_INFO, stream << "DecodeTokenOpRet() incorrect ccType=" << (int)ccType << " tokenid=" << revuint256(tokenid).GetHex() << std::endl);
-                    return (uint8_t)0;
-                }
-
-                // add verification pubkeys:
-                voutPubkeys.clear();
-                if (voutPubkey1.IsValid())
-                    voutPubkeys.push_back(voutPubkey1);
-                if (voutPubkey2.IsValid())
-                    voutPubkeys.push_back(voutPubkey2);
-
-                tokenid = revuint256(tokenid);
-
-                if (foundOldstyle) {        //patch for old-style opret data with no opretid
-                    LOGSTREAM((char *)"cctokens", CCLOG_DEBUG1, stream << "DecodeTokenOpRet() found old-style rogue/asset data, evalcode=" << (int)voldstyledata.begin()[0] << " funcid=" << (char)voldstyledata.begin()[1] << " for tokenid=" << revuint256(tokenid).GetHex() << std::endl);
-                    uint8_t opretIdRestored;
-                    if (voldstyledata.begin()[0] == 0x11 /*EVAL_ROGUE*/)
-                        opretIdRestored = OPRETID_ROGUEGAMEDATA;
-                    else // EVAL_ASSETS
-                        opretIdRestored = OPRETID_ASSETSDATA;
-
-                    oprets.push_back(std::make_pair(opretIdRestored, voldstyledata));
-                }
-
-                return(funcId);
+                vscript_t dummyPubkey;
+                std::string dummyName;
+                std::string dummyDescription;
+                return DecodeTokenCreateOpRet(scriptPubKey, dummyPubkey, dummyName, dummyDescription, oprets);
             }
-            LOGSTREAM((char *)"cctokens", CCLOG_INFO, stream << "DecodeTokenOpRet() bad opret format," << " ccType=" << (int)ccType << " tokenid=" <<  revuint256(tokenid).GetHex() << std::endl);
-            return (uint8_t)0;
+        case 't':
+            {
+                vscript_t voldstyledata;
+                vscript_t vblob;
+                uint8_t dummyEvalCode;
+                uint8_t dummyFuncId;
+                uint8_t ccType;
+                uint8_t opretId = 0;
+                CPubKey voutPubkey1;
+                CPubKey voutPubkey2;
+                // compatibility with old-style rogue or assets data (with no opretid):
+                // try to unmarshal old-style rogue or assets data:
+                bool foundOldstyle = E_UNMARSHAL(vopret, ss >> dummyEvalCode; ss >> dummyFuncId; ss >> tokenid; ss >> ccType;
+                                            if (ccType >= 1) ss >> voutPubkey1;
+                                            if (ccType == 2) ss >> voutPubkey2;
+                                            if (!ss.eof()) {
+                                                ss >> voldstyledata;
+                                            }) && voldstyledata.size() >= 2 && 
+                                                (voldstyledata.begin()[0] == 0x11 /*EVAL_ROGUE*/ && IS_CHARINSTR(voldstyledata.begin()[1], "RHQKG")  ||
+                                                voldstyledata.begin()[0] == EVAL_ASSETS && IS_CHARINSTR(voldstyledata.begin()[1], "sbSBxo")) ;
+                    
+                if (foundOldstyle ||  // fix for compatibility with old style data (no opretid)
+                    E_UNMARSHAL(vopret, ss >> dummyEvalCode; ss >> dummyFuncId; ss >> tokenid; ss >> ccType;
+                        if (ccType >= 1) ss >> voutPubkey1;
+                        if (ccType == 2) ss >> voutPubkey2;
+                        while (!ss.eof()) {
+                            ss >> opretId;
+                            if (!ss.eof()) {
+                                ss >> vblob;
+                                oprets.push_back(std::make_pair(opretId, vblob));
+                            }
+                        }))
+                {
+                    if (!(ccType >= 0 && ccType <= 2)) { //incorrect ccType
+                        LOGSTREAM((char *)"cctokens", CCLOG_INFO, stream << "DecodeTokenOpRet() incorrect ccType=" << (int)ccType << " tokenid=" << revuint256(tokenid).GetHex() << std::endl);
+                        return (uint8_t)0;
+                    }
 
+                    // add verification pubkeys:
+                    voutPubkeys.clear();
+                    if (voutPubkey1.IsValid())
+                        voutPubkeys.push_back(voutPubkey1);
+                    if (voutPubkey2.IsValid())
+                        voutPubkeys.push_back(voutPubkey2);
+
+                    tokenid = revuint256(tokenid);
+
+                    if (foundOldstyle) {        //patch for old-style opret data with no opretid
+                        LOGSTREAM((char *)"cctokens", CCLOG_DEBUG1, stream << "DecodeTokenOpRet() found old-style rogue/asset data, evalcode=" << (int)voldstyledata.begin()[0] << " funcid=" << (char)voldstyledata.begin()[1] << " for tokenid=" << revuint256(tokenid).GetHex() << std::endl);
+                        uint8_t opretIdRestored;
+                        if (voldstyledata.begin()[0] == 0x11 /*EVAL_ROGUE*/)
+                            opretIdRestored = OPRETID_ROGUEGAMEDATA;
+                        else // EVAL_ASSETS
+                            opretIdRestored = OPRETID_ASSETSDATA;
+
+                        oprets.push_back(std::make_pair(opretIdRestored, voldstyledata));
+                    }
+
+                    return(funcId);
+                }
+                LOGSTREAM((char *)"cctokens", CCLOG_INFO, stream << "DecodeTokenOpRet() bad opret format," << " ccType=" << (int)ccType << " tokenid=" <<  revuint256(tokenid).GetHex() << std::endl);
+                return (uint8_t)0;
+            }
         default:
             LOGSTREAM((char *)"cctokens", CCLOG_INFO, stream << "DecodeTokenOpRet() illegal funcid=" << (int)funcId << std::endl);
             return (uint8_t)0;

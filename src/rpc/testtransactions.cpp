@@ -48,6 +48,7 @@
 
 #include "cc/CCinclude.h"
 #include "cc/CCPrices.h"
+#include "cc/CCHeir.h"
 
 using namespace std;
 
@@ -94,14 +95,13 @@ UniValue test_ac(const UniValue& params, bool fHelp, const CPubKey& mypk)
 
     opret << OP_RETURN << E_MARSHAL(ss << (uint8_t)EVAL_HEIR << (uint8_t)'A' << fundingtxid << (uint8_t)0);
 
-    cp = CCinit(&C, EVAL_HEIR);
-    return(FinalizeCCTx(0, cp, mtx, myPubkey, txfee, opret));
+    CCHeirContract_info heirC;
+    return(FinalizeCCTx(0, &heirC, mtx, myPubkey, txfee, opret));
 }
 
 UniValue test_heirmarker(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
     // make fake token tx: 
-    struct CCcontract_info *cp, C;
 
     if (fHelp || (params.size() != 1))
         throw runtime_error("incorrect params\n");
@@ -125,14 +125,13 @@ UniValue test_heirmarker(const UniValue& params, bool fHelp, const CPubKey& mypk
 
     opret << OP_RETURN << E_MARSHAL(ss << (uint8_t)EVAL_HEIR << (uint8_t)'C' << fundingtxid << (uint8_t)0);
 
-    cp = CCinit(&C, EVAL_HEIR);
-    return(FinalizeCCTx(0, cp, mtx, myPubkey, 10000, opret));
+    CCHeirContract_info heirC;
+    return(FinalizeCCTx(0, &heirC, mtx, myPubkey, 10000, opret));
 }
 
 UniValue test_burntx(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
     // make fake token tx: 
-    struct CCcontract_info *cp, C;
 
     if (fHelp || (params.size() != 1))
         throw runtime_error("incorrect params\n");
@@ -157,19 +156,19 @@ UniValue test_burntx(const UniValue& params, bool fHelp, const CPubKey& mypk)
     std::vector<CPubKey> voutPubkeys;
     voutPubkeys.push_back(burnpk);
 
-    cp = CCinit(&C, EVAL_TOKENS);
+    CCTokensContract_info C;
 
     std::vector<uint8_t> vopret;
     GetNonfungibleData(tokenid, vopret);
     if (vopret.size() > 0)
-        cp->additionalTokensEvalcode2 = vopret.begin()[0];
+        C.additionalTokensEvalcode2 = vopret.begin()[0];
 
     uint8_t tokenpriv[33];
     char unspendableTokenAddr[64];
-    CPubKey unspPk = GetUnspendable(cp, tokenpriv);
-    GetCCaddress(cp, unspendableTokenAddr, unspPk);
-    CCaddr2set(cp, EVAL_TOKENS, unspPk, tokenpriv, unspendableTokenAddr);
-    return(FinalizeCCTx(0, cp, mtx, myPubkey, 10000, EncodeTokenOpRet(tokenid, voutPubkeys, std::make_pair(0, vscript_t()))));
+    CPubKey unspPk = C.GetUnspendable(tokenpriv);
+    GetCCaddress(&C, unspendableTokenAddr, unspPk);
+    CCaddr2set(&C, EVAL_TOKENS, unspPk, tokenpriv, unspendableTokenAddr);
+    return(FinalizeCCTx(0, &C, mtx, myPubkey, 10000, EncodeTokenOpRet(tokenid, voutPubkeys, std::make_pair(0, vscript_t()))));
 }
 
 UniValue test_proof(const UniValue& params, bool fHelp, const CPubKey& mypk)
@@ -225,7 +224,6 @@ extern CScript prices_costbasisopret(uint256 bettxid, CPubKey mypk, int32_t heig
 UniValue test_pricesmarker(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
     // make fake token tx: 
-    struct CCcontract_info *cp, C;
 
     if (fHelp || (params.size() != 1))
         throw runtime_error("incorrect params\n");
@@ -234,7 +232,6 @@ UniValue test_pricesmarker(const UniValue& params, bool fHelp, const CPubKey& my
 
     uint256 bettxid = Parseuint256((char *)params[0].get_str().c_str());
 
-    cp = CCinit(&C, EVAL_PRICES);
     CPubKey myPubkey = pubkey2pk(Mypubkey());
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
 
@@ -245,7 +242,8 @@ UniValue test_pricesmarker(const UniValue& params, bool fHelp, const CPubKey& my
     mtx.vin.push_back(CTxIn(bettxid, 1));
     mtx.vout.push_back(CTxOut(1000, CScript() << ParseHex(HexStr(myPubkey)) << OP_CHECKSIG));
 
-    return(FinalizeCCTx(0, cp, mtx, myPubkey, 10000, prices_costbasisopret(bettxid, myPubkey, 100, 100)));
+    CCPricesContract_info C;
+    return(FinalizeCCTx(0, &C, mtx, myPubkey, 10000, prices_costbasisopret(bettxid, myPubkey, 100, 100)));
 }
 
 

@@ -15,6 +15,7 @@
 
 #include "CCinclude.h"
 #include "key_io.h"
+#include "CCtokens.h"
 
 std::vector<CPubKey> NULL_pubkeys;
 struct NSPV_CCmtxinfo NSPV_U;
@@ -59,11 +60,10 @@ UniValue FinalizeCCTxExt(bool remote, uint64_t CCmask, struct CCcontract_info *c
     uint8_t *privkey = NULL, myprivkey[32] = { '\0' }, unspendablepriv[32] = { '\0' }, /*tokensunspendablepriv[32],*/ *msg32 = 0;
 	CC *mycond=0, *othercond=0, *othercond2=0,*othercond4=0, *othercond3=0, *othercond1of2=NULL, *othercond1of2tokens = NULL, *cond=0,  *condCC2=0,*mytokenscond = NULL, *mysingletokenscond = NULL, *othertokenscond = NULL;
 	CPubKey unspendablepk /*, tokensunspendablepk*/;
-	struct CCcontract_info *cpTokens, tokensC;
     UniValue sigData(UniValue::VARR),result(UniValue::VOBJ);
     const UniValue sigDataNull = NullUniValue;
 
-    globalpk = GetUnspendable(cp,0);
+    globalpk = cp->GetUnspendable();
     n = mtx.vout.size();
     for (i=0; i<n; i++)
     {
@@ -91,7 +91,7 @@ UniValue FinalizeCCTxExt(bool remote, uint64_t CCmask, struct CCcontract_info *c
     mycond = MakeCCcond1(cp->evalcode,mypk);
 
 	// to spend from single-eval evalcode 'unspendable' cc addr
-	unspendablepk = GetUnspendable(cp, unspendablepriv);
+	unspendablepk = cp->GetUnspendable(unspendablepriv);
 	GetCCaddress(cp, unspendable, unspendablepk);
 	othercond = MakeCCcond1(cp->evalcode, unspendablepk);
     GetCCaddress1of2(cp,CC1of2CCaddr,unspendablepk,unspendablepk);
@@ -105,8 +105,8 @@ UniValue FinalizeCCTxExt(bool remote, uint64_t CCmask, struct CCcontract_info *c
 	mytokenscond = MakeTokensCCcond1(cp->evalcode, cp->additionalTokensEvalcode2, mypk);  
 
 	// to spend from single-eval EVAL_TOKENS mypk 
-	cpTokens = CCinit(&tokensC, EVAL_TOKENS);
-	GetCCaddress(cpTokens, mysingletokensaddr, mypk);
+    CCTokensContract_info tokens;
+	GetCCaddress(&tokens, mysingletokensaddr, mypk);
 	mysingletokenscond = MakeCCcond1(EVAL_TOKENS, mypk);
 
 	// to spend from dual/three-eval EVAL_TOKEN+evalcode 'unspendable' pk:

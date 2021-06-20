@@ -135,7 +135,7 @@ UniValue games_settle(uint64_t txfee,struct CCcontract_info *cp,cJSON *params)
         return(result);
     }
     mypk = pubkey2pk(Mypubkey());
-    gamespk = GetUnspendable(cp,0);
+    gamespk = cp->GetUnspendable();
     acpk = buf2pk(ASSETCHAINS_OVERRIDE_PUBKEY33);
     Getscriptaddress(acaddr,CScript() << ParseHex(HexStr(acpk)) << OP_CHECKSIG);
     if ( params != 0 && cJSON_GetArraySize(params) == 1 )
@@ -178,7 +178,7 @@ UniValue games_bet(uint64_t txfee,struct CCcontract_info *cp,cJSON *params)
         return(result);
     }
     mypk = pubkey2pk(Mypubkey());
-    gamespk = GetUnspendable(cp,0);
+    gamespk = cp->GetUnspendable();
     acpk = buf2pk(ASSETCHAINS_OVERRIDE_PUBKEY33);
     if ( params != 0 && cJSON_GetArraySize(params) == 2 )
     {

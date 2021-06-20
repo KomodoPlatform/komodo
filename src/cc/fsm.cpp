@@ -43,7 +43,7 @@ bool FSMExactAmounts(struct CCcontract_info *cp,Eval* eval,const CTransaction &t
     for (i=0; i<numvins; i++)
     {
         //fprintf(stderr,"vini.%d\n",i);
-        if ( (*cp->ismyvin)(tx.vin[i].scriptSig) != 0 )
+        if ( cp->ismyvin(tx.vin[i].scriptSig) != 0 )
         {
             //fprintf(stderr,"vini.%d check mempool\n",i);
             if ( eval->GetTxUnconfirmed(tx.vin[i].prevout.hash,vinTx,hashBlock) == 0 )
@@ -72,7 +72,7 @@ bool FSMExactAmounts(struct CCcontract_info *cp,Eval* eval,const CTransaction &t
     else return(true);
 }
 
-bool FSMValidate(struct CCcontract_info *cp,Eval* eval,const CTransaction &tx, uint32_t nIn)
+bool CCFSMContract_info::validate(Eval* eval,const CTransaction &tx, uint32_t nIn)
 {
     int32_t numvins,numvouts,preventCCvins,preventCCvouts,i; bool retval;
     return eval->Invalid("no validation yet");
@@ -93,7 +93,7 @@ bool FSMValidate(struct CCcontract_info *cp,Eval* eval,const CTransaction &tx, u
             }
         }
         //fprintf(stderr,"check amounts\n");
-        if ( FSMExactAmounts(cp,eval,tx,1,10000) == false )
+        if ( FSMExactAmounts(this,eval,tx,1,10000) == false )
         {
             fprintf(stderr,"fsmget invalid amount\n");
             return false;
@@ -101,7 +101,7 @@ bool FSMValidate(struct CCcontract_info *cp,Eval* eval,const CTransaction &tx, u
         else
         {
             preventCCvouts = 1;
-            if ( IsFSMvout(cp,tx,0) != 0 )
+            if ( IsFSMvout(this,tx,0) != 0 )
             {
                 preventCCvouts++;
                 i = 1;
@@ -158,20 +158,20 @@ std::string FSMList()
 std::string FSMCreate(uint64_t txfee,std::string name,std::string states)
 {
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
-    CPubKey mypk,fsmpk; CScript opret; int64_t inputs,CCchange=0,nValue=COIN; struct CCcontract_info *cp,C;
-    cp = CCinit(&C,EVAL_FSM);
+    CPubKey mypk,fsmpk; CScript opret; int64_t inputs,CCchange=0,nValue=COIN; 
+    CCFSMContract_info C;
     if ( txfee == 0 )
         txfee = 10000;
-    fsmpk = GetUnspendable(cp,0);
+    fsmpk = C.GetUnspendable();
     mypk = pubkey2pk(Mypubkey());
-    if ( (inputs= AddFSMInputs(cp,mtx,fsmpk,nValue+txfee,60)) > 0 )
+    if ( (inputs= AddFSMInputs(&C,mtx,fsmpk,nValue+txfee,60)) > 0 )
     {
         if ( inputs > nValue )
             CCchange = (inputs - nValue - txfee);
         if ( CCchange != 0 )
             mtx.vout.push_back(MakeCC1vout(EVAL_FSM,CCchange,fsmpk));
         mtx.vout.push_back(CTxOut(nValue,CScript() << ParseHex(HexStr(mypk)) << OP_CHECKSIG));
-        return(FinalizeCCTx(-1LL,cp,mtx,mypk,txfee,opret));
+        return(FinalizeCCTx(-1LL,&C,mtx,mypk,txfee,opret));
     } else fprintf(stderr,"cant find fsm inputs\n");
     return("");
 }
@@ -179,11 +179,10 @@ std::string FSMCreate(uint64_t txfee,std::string name,std::string states)
 std::string FSMInfo(uint256 fsmtxid)
 {
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
-    CPubKey mypk,fsmpk; int64_t funds = 0; CScript opret; struct CCcontract_info *cp,C;
-    cp = CCinit(&C,EVAL_FSM);
-    mypk = pubkey2pk(Mypubkey());
-    fsmpk = GetUnspendable(cp,0);
-    return("");
+    CPubKey mypk = pubkey2pk(Mypubkey());
+    CCFSMContract_info C;
+    CPubKey fsmpk = C.GetUnspendable();
+    return "";
 }
 
 

@@ -73,6 +73,7 @@ Details.
 #include "../komodo_cJSON.h"
 #include "../init.h"
 #include "rpc/server.h"
+#include "cc/CCcontract.h"
 
 #define CC_BURNPUBKEY "02deaddeaddeaddeaddeaddeaddeaddeaddeaddeaddeaddeaddeaddeaddeaddead" //!< 'dead' pubkey in hex for burning tokens (if tokens are sent to it, they become 'burned')
 /// \cond INTERNAL
@@ -85,13 +86,6 @@ Details.
 #define CCDISABLEALL memset(ASSETCHAINS_CCDISABLES,1,sizeof(ASSETCHAINS_CCDISABLES))
 #define CCENABLE(x) ASSETCHAINS_CCDISABLES[((uint8_t)x)] = 0
 
-/* moved to komodo_cJSON.h
-#ifndef _BITS256
-#define _BITS256
-    union _bits256 { uint8_t bytes[32]; uint16_t ushorts[16]; uint32_t uints[8]; uint64_t ulongs[4]; uint64_t txid; };
-    typedef union _bits256 bits256;
-#endif
-*/
 /// \endcond
 
 /// identifiers of additional data blobs in token opreturn script:
@@ -149,78 +143,11 @@ struct CC_meta
 };
 /// \endcond
 
-/// CC contract (Antara module) info structure that contains data used for signing and validation of cc contract transactions
-struct CCcontract_info
-{
-    uint8_t evalcode;  //!< cc contract eval code, set by CCinit function
-    uint8_t additionalTokensEvalcode2;  //!< additional eval code for spending from three-eval-code vouts with EVAL_TOKENS, evalcode, additionalTokensEvalcode2 
-                                        //!< or vouts with two evalcodes: EVAL_TOKENS, additionalTokensEvalcode2. 
-                                        //!< Set by AddTokenCCInputs function
 
-    char unspendableCCaddr[64]; //!< global contract cryptocondition address, set by CCinit function
-    char CChexstr[72];          //!< global contract pubkey in hex, set by CCinit function
-    char normaladdr[64];        //!< global contract normal address, set by CCinit function
-    uint8_t CCpriv[32];         //!< global contract private key, set by CCinit function
-
-    /// vars for spending from 1of2 cc.
-    /// NOTE: the value of 'evalcode' member variable will be used for constructing 1of2 cryptocondition
-    char coins1of2addr[64];     //!< address of 1of2 cryptocondition, set by CCaddr1of2set function
-    CPubKey coins1of2pk[2];     //!< two pubkeys of 1of2 cryptocondition, set by CCaddr1of2set function
-    uint8_t coins1of2priv[32];  //!< privkey for the one of two pubkeys of 1of2 cryptocondition, set by CCaddr1of2set function
-
-    /// vars for spending from 1of2 token cc.
-    /// NOTE: the value of 'evalcode' member variable will be used for constructing 1of2 token cryptocondition
-    char tokens1of2addr[64];    //!< address of 1of2 token cryptocondition set by CCaddrTokens1of2set function
-    CPubKey tokens1of2pk[2];    //!< two pubkeys of 1of2 token cryptocondition set by CCaddrTokens1of2set function
-    uint8_t tokens1of2priv[32]; //!< privkey for the one of two pubkeys of 1of2 token cryptocondition set by CCaddrTokens1of2set function
-
-    /// vars for spending from two additional global CC addresses of other contracts with their own eval codes
-    uint8_t unspendableEvalcode2;   //!< other contract eval code, set by CCaddr2set function
-    uint8_t unspendableEvalcode3;   //!< yet another other contract eval code, set by CCaddr3set function
-    char    unspendableaddr2[64];   //!< other contract global cc address, set by CCaddr2set function
-    char    unspendableaddr3[64];   //!< yet another contract global cc address, set by CCaddr3set function
-    uint8_t unspendablepriv2[32];   //!< other contract private key for the global cc address, set by CCaddr2set function
-    uint8_t unspendablepriv3[32];   //!< yet another contract private key for the global cc address, set by CCaddr3set function
-    CPubKey unspendablepk2;         //!< other contract global public key, set by CCaddr2set function
-    CPubKey unspendablepk3;         //!< yet another contract global public key, set by CCaddr3set function
-
-    /// cc contract transaction validation callback that enforces the contract consensus rules
-    /// @param cp CCcontract_info structure with initialzed with CCinit
-    /// @param eval object of Eval type, used to report validation error like eval->Invalid("some error");
-    /// @param tx transaction object to validate
-    /// @param nIn not used at this time
-    bool(*validate)(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn);
-
-    /// checks if the value of evalcode in cp object is present in the scriptSig parameter, 
-    /// that is, the vin for this scriptSig will be validated by the cc contract (Antara module) defined by the eval code in this CCcontract_info object
-    /// @param scriptSig scriptSig to check\n
-    /// Example:
-    /// \code
-    /// bool ccFound = false;
-    /// for(int i = 0; i < tx.vin.size(); i ++)
-    ///     if (cp->ismyvin(tx.vin[i].scriptSig)) {
-    ///         ccFound = true;
-    ///         break;
-    ///     }
-    /// \endcode
-    bool (*ismyvin)(CScript const& scriptSig);	
-
-    /// @private
-    uint8_t didinit;
-};
-
-/// init CCcontract_info structure with global pubkey, privkey and address for the contract identified by the passed evalcode.\n
-/// Members of the cp object that are filled with this function:\n
-/// cp->unspendableCCaddr\n
-/// cp->normaladdr\n
-/// cp->CChexstr\n
-/// cp->CCpriv\n
-/// cp->validate\n
-/// cp->ismyvin\n
-/// @param cp the address of CCcontract_info structure which will be filled with the global keys and address
+/// init CCcontract_info structure 
 /// @param evalcode eval code for the module
 /// @returns pointer to the passed CCcontract_info structure, it must not be freed
-struct CCcontract_info *CCinit(struct CCcontract_info *cp,uint8_t evalcode);
+std::shared_ptr<CCcontract_info> CCinit(uint8_t evalcode);
 
 /// \cond INTERNAL
 struct oracleprice_info
@@ -357,12 +284,12 @@ int32_t oracle_format(uint256 *hashp,int64_t *valp,char *str,uint8_t fmt,uint8_t
 /// @param tokenid id of token which inputs to add
 /// @param total amount to add (if total==0 no inputs are added and all available amount is returned)
 /// @param maxinputs maximum number of inputs to add. If 0 then CC_MAXVINS define is used
-int64_t AddTokenCCInputs(struct CCcontract_info *cp, CMutableTransaction &mtx, CPubKey pk, uint256 tokenid, int64_t total, int32_t maxinputs);
+int64_t AddTokenCCInputs(CCcontract_info *cp, CMutableTransaction &mtx, CPubKey pk, uint256 tokenid, int64_t total, int32_t maxinputs);
 
 /// An overload that also returns NFT data in vopretNonfungible parameter
 /// the rest parameters are the same as in the first AddTokenCCInputs overload
 /// @see AddTokenCCInputs
-int64_t AddTokenCCInputs(struct CCcontract_info *cp, CMutableTransaction &mtx, CPubKey pk, uint256 tokenid, int64_t total, int32_t maxinputs, vscript_t &vopretNonfungible);
+int64_t AddTokenCCInputs(CCcontract_info *cp, CMutableTransaction &mtx, CPubKey pk, uint256 tokenid, int64_t total, int32_t maxinputs, vscript_t &vopretNonfungible);
 
 /// Checks if a transaction vout is true token vout, for this check pubkeys and eval code in token opreturn are used to recreate vout and compare it with the checked vout.
 /// Verifies that the transaction total token inputs value equals to total token outputs (that is, token balance is not changed in this transaction)
@@ -463,22 +390,6 @@ void GetNonfungibleData(uint256 tokenid, vscript_t &vopretNonfungible);
 
 /// @private
 bool ExtractTokensCCVinPubkeys(const CTransaction &tx, std::vector<CPubKey> &vinPubkeys);
-
-// CCcustom
-
-/// Returns global pubkey for the evalcode and sets private key for the global pubkey
-/// @param cp CCcontract_info structure initialized for a evalcode
-/// @param[out] unspendablepriv if not null then in this parameter private key is returned. Must have at least 32 byte size
-/// @returns global contract pubkey.\n
-/// Example: 
-/// \code
-/// struct CCcontract_info *cp, C;
-/// uint8_t ccAssetsPriv[32]
-/// cp = CCinit(&C, EVAL_ASSETS);
-/// CPubKey ccAssetsPk = GetUnspendable(cp, ccAssetsPriv);
-/// \endcode
-/// Now ccAssetsPk has Antara 'Assets' module global pubkey and ccAssetsPriv has its publicly available private key
-CPubKey GetUnspendable(struct CCcontract_info *cp,uint8_t *unspendablepriv);
 
 // CCutils
 
@@ -680,8 +591,13 @@ bool GetTokensCCaddress1of2(struct CCcontract_info *cp, char *destaddr, CPubKey 
 /// @see CCcontract_info
 void CCaddrTokens1of2set(struct CCcontract_info *cp, CPubKey pk1, CPubKey pk2, uint8_t *priv, char *coinaddr);
 
-/// @private
-int32_t CClib_initcp(struct CCcontract_info *cp,uint8_t evalcode);
+/****
+ * Initialize a CCcontract_info object, setting its evalcode
+ * @param cp the CCcontract_info object
+ * @param evalcode the evalcode
+ * @returns true on success
+ */
+bool CClib_initcp(CCcontract_info *cp,uint8_t evalcode);
 
 /// IsCCInput checks if scriptSig object contains a cryptocondition 
 /// @param scriptSig scriptSig object with a cryptocondition

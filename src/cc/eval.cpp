@@ -22,6 +22,7 @@
 #include "cc/eval.h"
 #include "cc/utils.h"
 #include "cc/CCinclude.h"
+#include "cc/CClib.h"
 #include "main.h"
 #include "chain.h"
 #include "core_io.h"
@@ -31,7 +32,7 @@ bool CClib_Dispatch(const CC *cond,Eval *eval,std::vector<uint8_t> paramsNull,co
 char *CClib_name();
 
 Eval* EVAL_TEST = 0;
-struct CCcontract_info CCinfos[0x100];
+std::shared_ptr<CCcontract_info> CCinfos[0x100]; // holds CCcontract_infos for evalcodes between EVAL_FIRSTUSER and EVAL_LASTUSER
 extern pthread_mutex_t KOMODO_CC_mutex;
 
 bool RunCCEval(const CC *cond, const CTransaction &tx, unsigned int nIn)
@@ -71,7 +72,6 @@ bool RunCCEval(const CC *cond, const CTransaction &tx, unsigned int nIn)
  */
 bool Eval::Dispatch(const CC *cond, const CTransaction &txTo, unsigned int nIn)
 {
-    struct CCcontract_info *cp;
     if (cond->codeLength == 0)
         return Invalid("empty-eval");
 
@@ -93,11 +93,11 @@ bool Eval::Dispatch(const CC *cond, const CTransaction &txTo, unsigned int nIn)
             return CClib_Dispatch(cond,this,vparams,txTo,nIn);
         else return Invalid("mismatched -ac_cclib vs CClib_name");
     }
-    cp = &CCinfos[(int32_t)ecode];
-    if ( cp->didinit == 0 )
+
+    std::shared_ptr<CCcontract_info> cp = CCinfos[(int32_t)ecode];
+    if ( cp == nullptr )
     {
-        CCinit(cp,ecode);
-        cp->didinit = 1;
+        cp = CCinit(ecode);
     }
 
     switch ( ecode )
@@ -111,7 +111,7 @@ bool Eval::Dispatch(const CC *cond, const CTransaction &txTo, unsigned int nIn)
             break;
 
         default:
-            return(ProcessCC(cp,this, vparams, txTo, nIn));
+            return(ProcessCC(cp.get(),this, vparams, txTo, nIn));
             break;
     }
     return Invalid("invalid-code, dont forget to add EVAL_NEWCC to Eval::Dispatch");

@@ -41,7 +41,7 @@ bool AuctionExactAmounts(struct CCcontract_info *cp,Eval* eval,const CTransactio
     for (i=0; i<numvins; i++)
     {
         //fprintf(stderr,"vini.%d\n",i);
-        if ( (*cp->ismyvin)(tx.vin[i].scriptSig) != 0 )
+        if ( cp->ismyvin(tx.vin[i].scriptSig) != 0 )
         {
             //fprintf(stderr,"vini.%d check mempool\n",i);
             if ( eval->GetTxUnconfirmed(tx.vin[i].prevout.hash,vinTx,hashBlock) == 0 )
@@ -70,7 +70,7 @@ bool AuctionExactAmounts(struct CCcontract_info *cp,Eval* eval,const CTransactio
     else return(true);
 }
 
-bool AuctionValidate(struct CCcontract_info *cp,Eval* eval,const CTransaction &tx, uint32_t nIn)
+bool CCAuctionContract_info::validate(Eval* eval,const CTransaction &tx, uint32_t nIn)
 {
     int32_t numvins,numvouts,preventCCvins,preventCCvouts,i; bool retval;
     return eval->Invalid("no validation yet");
@@ -91,7 +91,7 @@ bool AuctionValidate(struct CCcontract_info *cp,Eval* eval,const CTransaction &t
             }
         }
         //fprintf(stderr,"check amounts\n");
-        if ( AuctionExactAmounts(cp,eval,tx,1,10000) == false )
+        if ( AuctionExactAmounts(this,eval,tx,1,10000) == false )
         {
             fprintf(stderr,"Auctionget invalid amount\n");
             return false;
@@ -99,7 +99,7 @@ bool AuctionValidate(struct CCcontract_info *cp,Eval* eval,const CTransaction &t
         else
         {
             preventCCvouts = 1;
-            if ( IsAuctionvout(cp,tx,0) != 0 )
+            if ( IsAuctionvout(this,tx,0) != 0 )
             {
                 preventCCvouts++;
                 i = 1;
@@ -151,20 +151,20 @@ int64_t AddAuctionInputs(struct CCcontract_info *cp,CMutableTransaction &mtx,CPu
 std::string AuctionBid(uint64_t txfee,uint256 itemhash,int64_t amount)
 {
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
-    CPubKey mypk,Auctionpk; CScript opret; int64_t inputs,CCchange=0,nValue=COIN; struct CCcontract_info *cp,C;
-    cp = CCinit(&C,EVAL_AUCTION);
+    CPubKey mypk,Auctionpk; CScript opret; int64_t inputs,CCchange=0,nValue=COIN; 
+    CCAuctionContract_info C;
     if ( txfee == 0 )
         txfee = 10000;
-    Auctionpk = GetUnspendable(cp,0);
+    Auctionpk = C.GetUnspendable();
     mypk = pubkey2pk(Mypubkey());
-    if ( (inputs= AddAuctionInputs(cp,mtx,Auctionpk,nValue+txfee,60)) > 0 )
+    if ( (inputs= AddAuctionInputs(&C,mtx,Auctionpk,nValue+txfee,60)) > 0 )
     {
         if ( inputs > nValue )
             CCchange = (inputs - nValue - txfee);
         if ( CCchange != 0 )
             mtx.vout.push_back(MakeCC1vout(EVAL_AUCTION,CCchange,Auctionpk));
         mtx.vout.push_back(CTxOut(nValue,CScript() << ParseHex(HexStr(mypk)) << OP_CHECKSIG));
-        return(FinalizeCCTx(-1LL,cp,mtx,mypk,txfee,opret));
+        return(FinalizeCCTx(-1LL,&C,mtx,mypk,txfee,opret));
     } else fprintf(stderr,"cant find Auction inputs\n");
     return("");
 }
@@ -172,20 +172,20 @@ std::string AuctionBid(uint64_t txfee,uint256 itemhash,int64_t amount)
 std::string AuctionDeliver(uint64_t txfee,uint256 itemhash,uint256 bidtxid)
 {
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
-    CPubKey mypk,Auctionpk; CScript opret; int64_t inputs,CCchange=0,nValue=COIN; struct CCcontract_info *cp,C;
-    cp = CCinit(&C,EVAL_AUCTION);
+    CPubKey mypk,Auctionpk; CScript opret; int64_t inputs,CCchange=0,nValue=COIN; 
+    CCAuctionContract_info C;
     if ( txfee == 0 )
         txfee = 10000;
-    Auctionpk = GetUnspendable(cp,0);
+    Auctionpk = C.GetUnspendable();
     mypk = pubkey2pk(Mypubkey());
-    if ( (inputs= AddAuctionInputs(cp,mtx,Auctionpk,nValue+txfee,60)) > 0 )
+    if ( (inputs= AddAuctionInputs(&C,mtx,Auctionpk,nValue+txfee,60)) > 0 )
     {
         if ( inputs > nValue )
             CCchange = (inputs - nValue - txfee);
         if ( CCchange != 0 )
             mtx.vout.push_back(MakeCC1vout(EVAL_AUCTION,CCchange,Auctionpk));
         mtx.vout.push_back(CTxOut(nValue,CScript() << ParseHex(HexStr(mypk)) << OP_CHECKSIG));
-        return(FinalizeCCTx(-1LL,cp,mtx,mypk,txfee,opret));
+        return(FinalizeCCTx(-1LL,&C,mtx,mypk,txfee,opret));
     } else fprintf(stderr,"cant find Auction inputs\n");
     return("");
 }
@@ -193,16 +193,16 @@ std::string AuctionDeliver(uint64_t txfee,uint256 itemhash,uint256 bidtxid)
 std::string AuctionPost(uint64_t txfee,uint256 itemhash,int64_t minbid,char *title,char *description)
 {
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
-    CPubKey mypk,Auctionpk; int64_t funds = 0; CScript opret; struct CCcontract_info *cp,C;
-    cp = CCinit(&C,EVAL_AUCTION);
+    CPubKey mypk,Auctionpk; int64_t funds = 0; CScript opret; 
+    CCAuctionContract_info C;
     if ( txfee == 0 )
         txfee = 10000;
     mypk = pubkey2pk(Mypubkey());
-    Auctionpk = GetUnspendable(cp,0);
+    Auctionpk = C.GetUnspendable();
     if ( AddNormalinputs(mtx,mypk,txfee,64) > 0 )
     {
         mtx.vout.push_back(MakeCC1vout(EVAL_AUCTION,funds,Auctionpk));
-        return(FinalizeCCTx(0,cp,mtx,mypk,txfee,opret));
+        return(FinalizeCCTx(0,&C,mtx,mypk,txfee,opret));
     }
     return("");
 }

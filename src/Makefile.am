@@ -292,6 +292,7 @@ libbitcoin_server_a_SOURCES = \
   cc/import.cpp \
   cc/importgateway.cpp \
   cc/CCassetsCore.cpp \
+  cc/CCcontract.cpp \
   cc/CCcustom.cpp \
   cc/CCtx.cpp \
   cc/CCutils.cpp \

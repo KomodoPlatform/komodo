@@ -22,6 +22,7 @@
 #include "komodo_defs.h"
 #include "script/standard.h"
 #include "cc/CCinclude.h"
+#include "cc/CCMarmara.h"
 
 int32_t komodo_notaries(uint8_t pubkeys[64][33],int32_t height,uint32_t timestamp);
 int32_t komodo_electednotary(int32_t *numnotariesp,uint8_t *pubkey33,int32_t height,uint32_t timestamp);
@@ -2743,12 +2744,12 @@ int32_t komodo_staked(CMutableTransaction &txNew,uint32_t nBits,uint32_t *blockt
         }
         else
         {
-            struct CCcontract_info *cp,C; uint256 txid; int32_t vout,ht,unlockht; CAmount nValue; char coinaddr[64]; CPubKey mypk,Marmarapk,pk;
+            CCMaramaContract_info C;
+            uint256 txid; int32_t vout,ht,unlockht; CAmount nValue; char coinaddr[64]; CPubKey mypk,Marmarapk,pk;
             std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs;
-            cp = CCinit(&C,EVAL_MARMARA);
             mypk = pubkey2pk(Mypubkey());
-            Marmarapk = GetUnspendable(cp,0);
-            GetCCaddress1of2(cp,coinaddr,Marmarapk,mypk);
+            Marmarapk = C.GetUnspendable();
+            GetCCaddress1of2(&C,coinaddr,Marmarapk,mypk);
             SetCCunspents(unspentOutputs,coinaddr,true);
             for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::const_iterator it=unspentOutputs.begin(); it!=unspentOutputs.end(); it++)
             {

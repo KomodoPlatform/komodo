@@ -75,10 +75,6 @@ CMutableTransaction MakeSelfImportSourceTx(CTxDestination &dest, int64_t amount)
     const int64_t txfee = 10000;
     int64_t inputs, change;
     CPubKey myPubKey = Mypubkey();
-    struct CCcontract_info *cpDummy, C;
-
-    cpDummy = CCinit(&C, EVAL_TOKENS);  // this is just for FinalizeCCTx to work
-
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
 
     if (AddNormalinputs(mtx, myPubKey, 2 * txfee, 4) == 0) {
@@ -89,7 +85,8 @@ CMutableTransaction MakeSelfImportSourceTx(CTxDestination &dest, int64_t amount)
     mtx.vout.push_back(CTxOut(txfee, scriptPubKey));
 
     //make opret with 'burned' amount:
-    FinalizeCCTx(0, cpDummy, mtx, myPubKey, txfee, CScript() << OP_RETURN << E_MARSHAL(ss << (uint8_t)EVAL_IMPORTCOIN << (uint8_t)'A' << amount));
+    CCTokensContract_info C;
+    FinalizeCCTx(0, &C, mtx, myPubKey, txfee, CScript() << OP_RETURN << E_MARSHAL(ss << (uint8_t)EVAL_IMPORTCOIN << (uint8_t)'A' << amount));
     return mtx;
 }
 
@@ -202,11 +199,10 @@ std::string MakeCodaImportTx(uint64_t txfee, std::string receipt, std::string sr
 {
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight()),burntx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
     CPubKey mypk; uint256 codaburntxid; std::vector<unsigned char> dummyproof;
-    int32_t i,numvouts,n,m; std::string coin,error; struct CCcontract_info *cp, C;
+    int32_t i,numvouts,n,m; std::string coin,error; 
     cJSON *result,*tmp,*tmp1; unsigned char hash[SHA256_DIGEST_LENGTH+1];
     char out[SHA256_DIGEST_LENGTH*2+1],*retstr,*destaddr,*receiver; TxProof txProof; uint64_t amount;
 
-    cp = CCinit(&C, EVAL_GATEWAYS);
     if (txfee == 0)
         txfee = 10000;
     mypk = pubkey2pk(Mypubkey());
@@ -537,13 +533,11 @@ bool CheckMigration(Eval *eval, const CTransaction &importTx, const CTransaction
     if (vimportOpret.begin()[0] == EVAL_TOKENS) { // for tokens (new opret with tokens)
         if ( is_STAKED(ASSETCHAINS_SYMBOL) == 1 )
             return eval->Invalid("no-tokens-migrate-on-LABS");
-        struct CCcontract_info *cpTokens, CCtokens_info;
+        CCTokensContract_info C;
         std::vector<std::pair<uint8_t, vscript_t>>  oprets;
         uint8_t evalCodeInOpret;
         std::vector<CPubKey> voutTokenPubkeys;
         vscript_t vnonfungibleOpret;
-
-        cpTokens = CCinit(&CCtokens_info, EVAL_TOKENS);
 
         if (DecodeTokenOpRet(importTx.vout.back().scriptPubKey, evalCodeInOpret, tokenid, voutTokenPubkeys, oprets) == 0)
             return eval->Invalid("cannot-decode-import-tx-token-opret");
@@ -556,7 +550,7 @@ bool CheckMigration(Eval *eval, const CTransaction &importTx, const CTransaction
         // check if burn tx at least has cc evaltoken vins (we cannot get cc input)
         bool hasTokenVin = false;
         for (auto vin : burnTx.vin)
-            if (cpTokens->ismyvin(vin.scriptSig))
+            if (C.ismyvin(vin.scriptSig))
                 hasTokenVin = true;
         if (!hasTokenVin)
             return eval->Invalid("burn-tx-has-no-token-vins");

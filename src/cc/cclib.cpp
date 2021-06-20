@@ -394,7 +394,7 @@ bool CClibExactAmounts(struct CCcontract_info *cp,Eval* eval,const CTransaction 
     for (i=0; i<numvins; i++)
     {
         //fprintf(stderr,"vini.%d\n",i);
-        if ( (*cp->ismyvin)(tx.vin[i].scriptSig) != 0 )
+        if ( cp->ismyvin(tx.vin[i].scriptSig) != 0 )
         {
             //fprintf(stderr,"vini.%d check mempool\n",i);
             if ( eval->GetTxUnconfirmed(tx.vin[i].prevout.hash,vinTx,hashBlock) == 0 )
@@ -569,7 +569,7 @@ std::string Faucet2Fund(struct CCcontract_info *cp,uint64_t txfee,int64_t funds)
     if ( txfee == 0 )
         txfee = 10000;
     mypk = pubkey2pk(Mypubkey());
-    cclibpk = GetUnspendable(cp,0);
+    cclibpk = cp->GetUnspendable();
     if ( AddNormalinputs2(mtx,funds+txfee,64) > 0 )
     {
         mtx.vout.push_back(MakeCC1vout(cp->evalcode,funds,cclibpk));
@@ -594,7 +594,7 @@ std::string CClib_rawtxgen(struct CCcontract_info *cp,uint8_t funcid,cJSON *para
     }
     else if ( funcid != 'G' )
         return("");
-    cclibpk = GetUnspendable(cp,0);
+    cclibpk = cp->GetUnspendable();
     mypk = pubkey2pk(Mypubkey());
     if ( (inputs= AddCClibInputs(cp,mtx,cclibpk,nValue+txfee,60,cp->unspendableCCaddr,1)) > 0 )
     {

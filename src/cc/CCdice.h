@@ -12,12 +12,10 @@
  * Removal or modification of this copyright notice is prohibited.            *
  *                                                                            *
  ******************************************************************************/
-
-
-#ifndef CC_DICE_H
-#define CC_DICE_H
+#pragma once
 
 #include "CCinclude.h"
+#include "CCcontract.h"
 
 #define EVAL_DICE 0xe6
 
@@ -32,4 +30,18 @@ UniValue DiceInfo(uint256 diceid);
 UniValue DiceList();
 int64_t DicePlanFunds(uint64_t &entropyval,uint256 &entropytxid,uint64_t refsbits,struct CCcontract_info *cp,CPubKey dicepk,uint256 reffundingtxid, int32_t &entropytxs,bool random);
 
-#endif
+
+struct CCDiceContract_info : public CCcontract_info
+{
+    CCDiceContract_info() : CCcontract_info()
+    {
+        evalcode = EVAL_DICE;
+        strcpy(unspendableCCaddr, "REabWB7KjFN5C3LFMZ5odExHPenYzHLtVw");
+        strcpy(normaladdr, "RLEe8f7Eg3TDuXii9BmNiiiaVGraHUt25c");
+        strcpy(CChexstr, "039d966927cfdadab3ee6c56da63c21f17ea753dde4b3dfd41487103e24b27e94e");
+        uint8_t DiceCCpriv[32] = { 0x0e, 0xe8, 0xf5, 0xb4, 0x3d, 0x25, 0xcc, 0x35, 0xd1, 0xf1, 0x2f, 0x04, 0x5f, 0x01, 0x26, 0xb8, 0xd1, 0xac, 0x3a, 0x5a, 0xea, 0xe0, 0x25, 0xa2, 0x8f, 0x2a, 0x8e, 0x0e, 0xf9, 0x34, 0xfa, 0x77 };
+        memcpy(CCpriv, DiceCCpriv, 32); 
+    }
+    virtual bool validate(Eval* eval, const CTransaction &tx, uint32_t nIn) override;
+};
+

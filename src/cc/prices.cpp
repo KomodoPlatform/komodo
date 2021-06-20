@@ -252,7 +252,7 @@ static bool ValidateBetTx(struct CCcontract_info *cp, Eval *eval, const CTransac
     if( prices_betopretdecode(bettx.vout.back().scriptPubKey, pk, firstheight, positionsize, leverage, firstprice, vec, tokenid) != 'B')
         return eval->Invalid("cannot decode opreturn for bet tx");
 
-    pricespk = GetUnspendable(cp, 0);
+    pricespk = cp->GetUnspendable();
 
     if (MakeCC1vout(cp->evalcode, bettx.vout[0].nValue, pk) != bettx.vout[0])
         return eval->Invalid("cannot validate vout0 in bet tx with pk from opreturn");
@@ -305,7 +305,7 @@ static bool ValidateAddFundingTx(struct CCcontract_info *cp, Eval *eval, const C
     if (prices_addopretdecode(addfundingtx.vout.back().scriptPubKey, bettxid, pk, amount) != 'A')
         return eval->Invalid("cannot decode opreturn for add funding tx");
 
-    pricespk = GetUnspendable(cp, 0);
+    pricespk = cp->GetUnspendable();
     uint8_t vintxFuncId = PricesCheckOpret(vintx, vintxOpret);
     if (vintxFuncId != 'A' && vintxFuncId != 'B') { // if vintx is bettx
         return eval->Invalid("incorrect vintx funcid");
@@ -351,7 +351,7 @@ static bool ValidateCostbasisTx(struct CCcontract_info *cp, Eval *eval, const CT
     if (prices_costbasisopretdecode(costbasistx.vout.back().scriptPubKey, bettxid, pk, height, costbasisInOpret) != 'C')
         return eval->Invalid("cannot decode opreturn for costbasis tx");
 
-    pricespk = GetUnspendable(cp, 0);
+    pricespk = cp->GetUnspendable();
     if (CTxOut(costbasistx.vout[0].nValue, CScript() << ParseHex(HexStr(pk)) << OP_CHECKSIG) != costbasistx.vout[0])  //might go to any pk who calculated costbasis
         return eval->Invalid("cannot validate vout0 in costbasis tx with pk from opreturn");
     if (MakeCC1vout(cp->evalcode, costbasistx.vout[1].nValue, pricespk) != costbasistx.vout[1])
@@ -423,7 +423,7 @@ static bool ValidateFinalTx(struct CCcontract_info *cp, Eval *eval, const CTrans
     if (bettx.GetHash() != bettxid)
         return eval->Invalid("incorrect bettx id");
 
-    pricespk = GetUnspendable(cp, 0);
+    pricespk = cp->GetUnspendable();
 
     if (CTxOut(finaltx.vout[0].nValue, CScript() << ParseHex(HexStr(pk)) << OP_CHECKSIG) != finaltx.vout[0])
         return eval->Invalid("cannot validate vout0 in final tx with pk from opreturn");
@@ -453,7 +453,7 @@ static bool ValidateFinalTx(struct CCcontract_info *cp, Eval *eval, const CTrans
 // costbasis calculation
 // cashout balance (PricesExactAmounts)
 // use the special address for 50% fees
-bool PricesValidate(struct CCcontract_info *cp,Eval* eval,const CTransaction &tx, uint32_t nIn)
+bool CCPricesContract_info::validate(Eval* eval,const CTransaction &tx, uint32_t nIn)
 {
     vscript_t vopret;
 
@@ -475,7 +475,7 @@ bool PricesValidate(struct CCcontract_info *cp,Eval* eval,const CTransaction &tx
 
     // find first cc vin and load vintx (might be either bet or add funding tx):
     for (auto vin : tx.vin) {
-        if (cp->ismyvin(vin.scriptSig)) {
+        if (ismyvin(vin.scriptSig)) {
             CTransaction vintx;
             uint256 hashBlock;
             vscript_t vintxOpret;
@@ -516,13 +516,13 @@ bool PricesValidate(struct CCcontract_info *cp,Eval* eval,const CTransaction &tx
 
     case 'A':   // add funding
         // check tx structure:
-        if (!ValidateAddFundingTx(cp, eval, tx, firstVinTx)) {
+        if (!ValidateAddFundingTx(this, eval, tx, firstVinTx)) {
             std::cerr << "PricesValidate() " << "ValidateAddFundingTx = false " << eval->state.GetRejectReason()  << std::endl;
             return false;  // invalid state is already set in the func
         }
 
         if (firstVinTxOpret.begin()[1] == 'B') {
-            if (!ValidateBetTx(cp, eval, firstVinTx)) {// check tx structure
+            if (!ValidateBetTx(this, eval, firstVinTx)) {// check tx structure
                 std::cerr << "PricesValidate() " << "funcId=A ValidatebetTx = false " << eval->state.GetRejectReason() << std::endl;
                 return false;  // invalid state is already set in the func
             }
@@ -553,11 +553,11 @@ bool PricesValidate(struct CCcontract_info *cp,Eval* eval,const CTransaction &tx
 
     case 'F':   // final tx 
     case 'R':
-        if (!ValidateFinalTx(cp, eval, tx, firstVinTx)) {
+        if (!ValidateFinalTx(this, eval, tx, firstVinTx)) {
             std::cerr << "PricesValidate() " << "ValidateFinalTx=false " << eval->state.GetRejectReason() << std::endl;
             return false;
         }
-        if (!ValidateBetTx(cp, eval, firstVinTx)) {
+        if (!ValidateBetTx(this, eval, firstVinTx)) {
             std::cerr << "PricesValidate() " << "ValidateBetTx=false " << eval->state.GetRejectReason() << std::endl;
             return false;
         }
@@ -1455,7 +1455,6 @@ UniValue PricesBet(int64_t txfee, int64_t amount, int16_t leverage, std::vector<
 {
     int32_t nextheight = komodo_nextheight();
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), nextheight); UniValue result(UniValue::VOBJ);
-    struct CCcontract_info *cp, C; 
     CPubKey pricespk, mypk; 
     int64_t betamount, firstprice = 0; 
     std::vector<uint16_t> vec; 
@@ -1468,12 +1467,12 @@ UniValue PricesBet(int64_t txfee, int64_t amount, int16_t leverage, std::vector<
         result.push_back(Pair("error", "leverage too big"));
         return(result);
     }
-    cp = CCinit(&C, EVAL_PRICES);
+    CCPricesContract_info C;
     if (txfee == 0)
         txfee = PRICES_TXFEE;
     mypk = pubkey2pk(Mypubkey());
-    pricespk = GetUnspendable(cp, 0);
-    //GetCCaddress(cp, myaddr, mypk);
+    pricespk = C.GetUnspendable();
+
     if (prices_syntheticvec(vec, synthetic) < 0 || (firstprice = prices_syntheticprice(vec, nextheight - 1, 1, leverage)) < 0 || vec.size() == 0 || vec.size() > 4096)
     {
         result.push_back(Pair("result", "error"));
@@ -1491,17 +1490,9 @@ UniValue PricesBet(int64_t txfee, int64_t amount, int16_t leverage, std::vector<
     {
         betamount = PRICES_SUBREVSHAREFEE(amount);
 
-        /*if( amount - betamount < PRICES_REVSHAREDUST)   {
-            result.push_back(Pair("result", "error"));
-            result.push_back(Pair("error", "bet amount too small"));
-            return(result);
-        }*/
-
-
-        mtx.vout.push_back(MakeCC1vout(cp->evalcode, txfee, mypk));                                 // vout0 baton for total funding
-        //  mtx.vout.push_back(MakeCC1vout(cp->evalcode, (amount - betamount) + 2 * txfee, pricespk));  // vout1, when spent, costbasis is set
-        mtx.vout.push_back(MakeCC1vout(cp->evalcode, txfee, pricespk));                             // vout1 cc marker (NVOUT_CCMARKER)
-        mtx.vout.push_back(MakeCC1vout(cp->evalcode, betamount, pricespk));                         // vout2 betamount
+        mtx.vout.push_back(MakeCC1vout(C.evalcode, txfee, mypk));                                 // vout0 baton for total funding
+        mtx.vout.push_back(MakeCC1vout(C.evalcode, txfee, pricespk));                             // vout1 cc marker (NVOUT_CCMARKER)
+        mtx.vout.push_back(MakeCC1vout(C.evalcode, betamount, pricespk));                         // vout2 betamount
         mtx.vout.push_back(CTxOut(txfee, CScript() << ParseHex(HexStr(pricespk)) << OP_CHECKSIG));  // vout3 normal marker NVOUT_NORMALMARKER - TODO: remove it as we have cc marker now, when move to the new chain
         if ( ASSETCHAINS_EARLYTXIDCONTRACT == EVAL_PRICES && KOMODO_EARLYTXID_SCRIPTPUB.size() == 0 )
         {
@@ -1513,7 +1504,7 @@ UniValue PricesBet(int64_t txfee, int64_t amount, int16_t leverage, std::vector<
         mtx.vout.push_back(CTxOut(amount-betamount, KOMODO_EARLYTXID_SCRIPTPUB)); 
         //test: mtx.vout.push_back(CTxOut(amount - betamount, CScript() << ParseHex("037c803ec82d12da939ac04379bbc1130a9065c53d8244a61eece1db942cf0efa7") << OP_CHECKSIG));  // vout4 test revshare fee
 
-        rawtx = FinalizeCCTx(0, cp, mtx, mypk, txfee, prices_betopret(mypk, nextheight - 1, amount, leverage, firstprice, vec, zeroid));
+        rawtx = FinalizeCCTx(0, &C, mtx, mypk, txfee, prices_betopret(mypk, nextheight - 1, amount, leverage, firstprice, vec, zeroid));
         return(prices_rawtxresult(result, rawtx, 0));
     }
     result.push_back(Pair("result", "error"));
@@ -1526,7 +1517,6 @@ UniValue PricesAddFunding(int64_t txfee, uint256 bettxid, int64_t amount)
 {
     int32_t nextheight = komodo_nextheight();
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), nextheight); UniValue result(UniValue::VOBJ);
-    struct CCcontract_info *cp, C; 
     CTransaction bettx; 
     CPubKey pricespk, mypk, pk; 
     int64_t positionsize, betamount, firstprice; 
@@ -1535,13 +1525,12 @@ UniValue PricesAddFunding(int64_t txfee, uint256 bettxid, int64_t amount)
     uint256 batontxid, tokenid, hashBlock;
     int16_t leverage = 0;
     std::string rawtx; 
-    //char myaddr[64];
 
-    cp = CCinit(&C, EVAL_PRICES);
     if (txfee == 0)
         txfee = PRICES_TXFEE;
     mypk = pubkey2pk(Mypubkey());
-    pricespk = GetUnspendable(cp, 0);
+    CCPricesContract_info C;
+    pricespk = C.GetUnspendable();
 
     if (!myGetTransaction(bettxid, bettx, hashBlock) || 
         bettx.vout.size() <= 3 ||
@@ -1561,18 +1550,12 @@ UniValue PricesAddFunding(int64_t txfee, uint256 bettxid, int64_t amount)
     if (AddNormalinputs(mtx, mypk, amount + 2*txfee, 64) >= amount + 2*txfee)
     {
         betamount = PRICES_SUBREVSHAREFEE(amount);
-        /*if (amount - betamount < PRICES_REVSHAREDUST) {
-            result.push_back(Pair("result", "error"));
-            result.push_back(Pair("error", "bet amount too small"));
-            return(result);
-        }*/
-
         std::vector<OneBetData> bets;
         if (prices_enumaddedbets(batontxid, bets, bettxid) >= 0)
         {
             mtx.vin.push_back(CTxIn(batontxid, 0, CScript()));
-            mtx.vout.push_back(MakeCC1vout(cp->evalcode, txfee, mypk));         // vout0 baton for total funding
-            mtx.vout.push_back(MakeCC1vout(cp->evalcode, betamount, pricespk));    // vout1 added amount
+            mtx.vout.push_back(MakeCC1vout(C.evalcode, txfee, mypk));         // vout0 baton for total funding
+            mtx.vout.push_back(MakeCC1vout(C.evalcode, betamount, pricespk));    // vout1 added amount
 
             if (ASSETCHAINS_EARLYTXIDCONTRACT == EVAL_PRICES && KOMODO_EARLYTXID_SCRIPTPUB.size() == 0)
             {
@@ -1584,7 +1567,7 @@ UniValue PricesAddFunding(int64_t txfee, uint256 bettxid, int64_t amount)
             mtx.vout.push_back(CTxOut(amount - betamount, KOMODO_EARLYTXID_SCRIPTPUB));
             // test: mtx.vout.push_back(CTxOut(amount - betamount, CScript() << ParseHex("037c803ec82d12da939ac04379bbc1130a9065c53d8244a61eece1db942cf0efa7") << OP_CHECKSIG));  //vout2  test revshare fee
 
-            rawtx = FinalizeCCTx(0, cp, mtx, mypk, txfee, prices_addopret(bettxid, mypk, amount));
+            rawtx = FinalizeCCTx(0, &C, mtx, mypk, txfee, prices_addopret(bettxid, mypk, amount));
             return(prices_rawtxresult(result, rawtx, 0));
         }
         else
@@ -1647,66 +1630,6 @@ UniValue PricesSetcostbasis(int64_t txfee, uint256 bettxid)
     int32_t nextheight = komodo_nextheight();
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), nextheight);
     UniValue result(UniValue::VOBJ);
-    struct CCcontract_info *cp, C; CTransaction bettx; uint256 hashBlock, batontxid, tokenid;
-    int64_t myfee, positionsize = 0, addedbets, firstprice = 0, lastprice, profits = 0, costbasis = 0, equity;
-    int32_t i, firstheight = 0, height, numvouts; int16_t leverage = 0;
-    std::vector<uint16_t> vec;
-    CPubKey pk, mypk, pricespk; std::string rawtx;
-/*
-    cp = CCinit(&C, EVAL_PRICES);
-    if (txfee == 0)
-        txfee = PRICES_TXFEE;
-
-    mypk = pubkey2pk(Mypubkey());
-    pricespk = GetUnspendable(cp, 0);
-    if (myGetTransaction(bettxid, bettx, hashBlock) != 0 && (numvouts = bettx.vout.size()) > 3)
-    {
-        if (prices_betopretdecode(bettx.vout[numvouts - 1].scriptPubKey, pk, firstheight, positionsize, leverage, firstprice, vec, tokenid) == 'B')
-        {
-            if (nextheight <= firstheight + PRICES_DAYWINDOW + 1) {
-                result.push_back(Pair("result", "error"));
-                result.push_back(Pair("error", "cannot calculate costbasis yet"));
-                return(result);
-            }
-
-            addedbets = prices_enumaddedbets(batontxid, bettx, bettxid);
-            mtx.vin.push_back(CTxIn(bettxid, 1, CScript()));              // spend vin1 with betamount
-            //for (i = 0; i < PRICES_DAYWINDOW + 1; i++)   // the last datum for 24h is the actual costbasis value
-            //{
-                int32_t retcode = prices_syntheticprofits(costbasis, firstheight, firstheight + PRICES_DAYWINDOW, leverage, vec, positionsize, addedbets, profits, lastprice);
-                if (retcode < 0) {
-                    result.push_back(Pair("result", "error"));
-                    result.push_back(Pair("error", "cannot calculate costbasis error getting price"));
-                    return(result);
-                }
-                equity = positionsize + addedbets + profits;
-                //if (equity < 0)
-                //{   // we are in loss
-                //    result.push_back(Pair("rekt", (int64_t)1));
-                //    result.push_back(Pair("rektheight", (int64_t)firstheight + i));
-                //    break;
-                //}
-            //}
-            //if (i == PRICES_DAYWINDOW + 1)
-            //    result.push_back(Pair("rekt", 0));
-
-            prices_betjson(result, profits, costbasis, positionsize, addedbets, leverage, firstheight, firstprice, lastprice, equity);
-
-            if (AddNormalinputs(mtx, mypk, txfee, 4) >= txfee)
-            {
-                myfee = bettx.vout[1].nValue / 10;   // fee for setting costbasis
-                result.push_back(Pair("myfee", myfee));
-
-                mtx.vout.push_back(CTxOut(myfee, CScript() << ParseHex(HexStr(mypk)) << OP_CHECKSIG));
-                mtx.vout.push_back(MakeCC1vout(cp->evalcode, bettx.vout[1].nValue - myfee, pricespk));
-                rawtx = FinalizeCCTx(0, cp, mtx, mypk, txfee, prices_costbasisopret(bettxid, mypk, firstheight + PRICES_DAYWINDOW , costbasis));  // -1
-                return(prices_rawtxresult(result, rawtx, 0));
-            }
-            result.push_back(Pair("result", "error"));
-            result.push_back(Pair("error", "not enough funds"));
-            return(result);
-        }
-    } */
     result.push_back(Pair("result", "error"));
     result.push_back(Pair("error", "deprecated")); 
     return(result);
@@ -1718,20 +1641,18 @@ UniValue PricesRefillFund(int64_t amount)
 {
     int32_t nextheight = komodo_nextheight();
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), nextheight); UniValue result(UniValue::VOBJ);
-    struct CCcontract_info *cp, C;
     CPubKey pricespk, mypk, pk;
     std::string rawtx;
-    //char myaddr[64];
 
-    cp = CCinit(&C, EVAL_PRICES);
     const int64_t   txfee = PRICES_TXFEE;
     mypk = pubkey2pk(Mypubkey());
-    pricespk = GetUnspendable(cp, 0);
 
     if (AddNormalinputs(mtx, mypk, amount + txfee, 64) >= amount + txfee)
     {            
-        mtx.vout.push_back(MakeCC1vout(cp->evalcode, amount, pricespk));    // vout1 added amount
-        rawtx = FinalizeCCTx(0, cp, mtx, mypk, txfee, CScript());
+        CCPricesContract_info C;
+        pricespk = C.GetUnspendable();
+        mtx.vout.push_back(MakeCC1vout(C.evalcode, amount, pricespk));    // vout1 added amount
+        rawtx = FinalizeCCTx(0, &C, mtx, mypk, txfee, CScript());
         return(prices_rawtxresult(result, rawtx, 0));
         
     }
@@ -1885,19 +1806,18 @@ UniValue PricesRekt(int64_t txfee, uint256 bettxid, int32_t rektheight)
 {
     int32_t nextheight = komodo_nextheight();
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), nextheight); UniValue result(UniValue::VOBJ);
-    struct CCcontract_info *cp, C; 
     CTransaction bettx; 
     int64_t myfee = 0;
     CPubKey pk, mypk, pricespk; 
     std::string rawtx;
     char destaddr[64];
 
-    cp = CCinit(&C, EVAL_PRICES);
     if (txfee == 0)     // TODO: what did we want to do with txfee in prices?
         txfee = PRICES_TXFEE;
     mypk = pubkey2pk(Mypubkey());
-    pricespk = GetUnspendable(cp, 0);
-    GetCCaddress(cp, destaddr, pricespk);
+    CCPricesContract_info C;
+    pricespk = C.GetUnspendable();
+    GetCCaddress(&C, destaddr, pricespk);
 
     BetInfo betinfo;
     int32_t retcode = prices_getbetinfo(bettxid, betinfo);
@@ -1947,13 +1867,11 @@ UniValue PricesRekt(int64_t txfee, uint256 bettxid, int32_t rektheight)
         int64_t CCchange = 0, inputsum;
 
         mtx.vin.push_back(CTxIn(bettxid, NVOUT_CCMARKER, CScript()));  // spend cc marker
-        if ((inputsum = AddPricesInputs(cp, mtx, destaddr, myfee + txfee, 64)) > myfee + txfee)  // TODO: why do we take txfee from global addr and not from user's addr?
+        if ((inputsum = AddPricesInputs(&C, mtx, destaddr, myfee + txfee, 64)) > myfee + txfee)  // TODO: why do we take txfee from global addr and not from user's addr?
             CCchange = (inputsum - myfee);
         mtx.vout.push_back(CTxOut(myfee, CScript() << ParseHex(HexStr(mypk)) << OP_CHECKSIG));
         if (CCchange >= txfee)
-            mtx.vout.push_back(MakeCC1vout(cp->evalcode, CCchange, pricespk));
-
-        /// mtx.vout.push_back(MakeCC1vout(cp->evalcode, bettx.vout[2].nValue - myfee - txfee, pricespk));  // change
+            mtx.vout.push_back(MakeCC1vout(C.evalcode, CCchange, pricespk));
 
         // make some PoW to get txid=0x00.....00 to 'faucet' rekts
         fprintf(stderr, "start PoW at %u\n", (uint32_t)time(NULL));
@@ -1964,7 +1882,7 @@ UniValue PricesRekt(int64_t txfee, uint256 bettxid, int32_t rektheight)
             //int32_t len;
             //uint8_t txbuf[32768];
 
-            rawtx = FinalizeCCTx(0, cp, tmpmtx, mypk, txfee, prices_finalopret(true, bettxid, mypk, betinfo.lastheight, betinfo.averageCostbasis, betinfo.lastprice, betinfo.liquidationprice, betinfo.equity, myfee, nonce));
+            rawtx = FinalizeCCTx(0, &C, tmpmtx, mypk, txfee, prices_finalopret(true, bettxid, mypk, betinfo.lastheight, betinfo.averageCostbasis, betinfo.lastprice, betinfo.liquidationprice, betinfo.equity, myfee, nonce));
             //if ((len = (int32_t)rawtx.size()) > 0 && len < sizeof(txbuf) / sizeof(txbuf[0]) * 2)
             //{
             //    len >>= 1;  // sizeof hex divide by 2
@@ -2000,18 +1918,18 @@ UniValue PricesCashout(int64_t txfee, uint256 bettxid)
     int32_t nextheight = komodo_nextheight();
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), nextheight); 
     UniValue result(UniValue::VOBJ);
-    struct CCcontract_info *cp, C; char destaddr[64]; 
+    char destaddr[64]; 
     int64_t CCchange = 0, inputsum;
     CPubKey pk, mypk, pricespk; 
     std::string rawtx;
 
-    cp = CCinit(&C, EVAL_PRICES);
     if (txfee == 0)
         txfee = PRICES_TXFEE;
 
     mypk = pubkey2pk(Mypubkey());
-    pricespk = GetUnspendable(cp, 0);
-    GetCCaddress(cp, destaddr, pricespk);
+    CCPricesContract_info C;
+    pricespk = C.GetUnspendable();
+    GetCCaddress(&C, destaddr, pricespk);
 
     BetInfo betinfo;
     int32_t retcode = prices_getbetinfo(bettxid, betinfo);
@@ -2061,15 +1979,14 @@ UniValue PricesCashout(int64_t txfee, uint256 bettxid)
     }
 
     mtx.vin.push_back(CTxIn(bettxid, NVOUT_CCMARKER, CScript()));  // spend cc marker
-    if ((inputsum = AddPricesInputs(cp, mtx, destaddr, betinfo.equity + txfee, 64)) > betinfo.equity + txfee)   // TODO: why txfee from the fund?
+    if ((inputsum = AddPricesInputs(&C, mtx, destaddr, betinfo.equity + txfee, 64)) > betinfo.equity + txfee)   // TODO: why txfee from the fund?
         CCchange = (inputsum - betinfo.equity);
     mtx.vout.push_back(CTxOut(betinfo.equity, CScript() << ParseHex(HexStr(mypk)) << OP_CHECKSIG));
     if (CCchange >= txfee)
-        mtx.vout.push_back(MakeCC1vout(cp->evalcode, CCchange, pricespk));
+        mtx.vout.push_back(MakeCC1vout(C.evalcode, CCchange, pricespk));
     // TODO: what should the opret param be:
-    rawtx = FinalizeCCTx(0, cp, mtx, mypk, txfee, prices_finalopret(false, bettxid, mypk, nextheight-1, betinfo.averageCostbasis, betinfo.lastprice, betinfo.liquidationprice, betinfo.equity, txfee, 0));
-    return(prices_rawtxresult(result, rawtx, 0));
-        
+    rawtx = FinalizeCCTx(0, &C, mtx, mypk, txfee, prices_finalopret(false, bettxid, mypk, nextheight-1, betinfo.averageCostbasis, betinfo.lastprice, betinfo.liquidationprice, betinfo.equity, txfee, 0));
+    return(prices_rawtxresult(result, rawtx, 0));   
 }
 
 
@@ -2145,10 +2062,6 @@ UniValue PricesList(uint32_t filter, CPubKey mypk)
 {
     UniValue result(UniValue::VARR); 
     std::vector<std::pair<CAddressIndexKey, CAmount> > addressIndex, addressIndexCC;
-    struct CCcontract_info *cp, C;
-  
-    cp = CCinit(&C, EVAL_PRICES);
-    //pricespk = GetUnspendable(cp, 0);
 
     // filters and outputs prices bet txid
     auto AddBetToList = [&](uint256 txid)
@@ -2192,8 +2105,8 @@ UniValue PricesList(uint32_t filter, CPubKey mypk)
         }
     };
 
-
-    SetCCtxids(addressIndex, cp->normaladdr, false);        // old normal marker
+    CCPricesContract_info C;
+    SetCCtxids(addressIndex, C.normaladdr, false);        // old normal marker
     for (std::vector<std::pair<CAddressIndexKey, CAmount> >::const_iterator it = addressIndex.begin(); it != addressIndex.end(); it++)
     {
         if( it->first.index == NVOUT_NORMALMARKER )
@@ -2328,12 +2241,10 @@ void prices_getorderbook(std::map<std::string, std::vector<BetInfo> > & bookmatc
 {
     std::vector<BetInfo> book;
     std::vector<std::pair<CAddressIndexKey, CAmount> > addressIndex;
-    struct CCcontract_info *cp, C;
-
-    cp = CCinit(&C, EVAL_PRICES);
 
     // add all bets:
-    SetCCtxids(addressIndex, cp->normaladdr, false);        // old normal marker
+    CCPricesContract_info C;
+    SetCCtxids(addressIndex, C.normaladdr, false);        // old normal marker
     for (std::vector<std::pair<CAddressIndexKey, CAmount> >::const_iterator it = addressIndex.begin(); it != addressIndex.end(); it++)
     {
         if (it->first.index == NVOUT_NORMALMARKER)
@@ -2348,7 +2259,7 @@ void prices_getorderbook(std::map<std::string, std::vector<BetInfo> > & bookmatc
     fundTotals.totalActiveBets = 0;
 
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > addressCCunspents;
-    SetCCunspents(addressCCunspents, cp->unspendableCCaddr, true);  // cc marker
+    SetCCunspents(addressCCunspents, C.unspendableCCaddr, true);  // cc marker
     for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::const_iterator it = addressCCunspents.begin(); it != addressCCunspents.end(); it++)
     {
         //std::cerr << "totalfund calc txid=" << it->first.txhash.GetHex() << " nvout=" << it->first.index << " satoshis=" << it->second.satoshis << std::endl;

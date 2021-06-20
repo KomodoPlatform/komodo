@@ -203,7 +203,7 @@ bool RewardsExactAmounts(struct CCcontract_info *cp,Eval *eval,const CTransactio
     numvouts = tx.vout.size();
     for (i=0; i<numvins; i++)
     {
-        if ( (*cp->ismyvin)(tx.vin[i].scriptSig) != 0 )
+        if ( cp->ismyvin(tx.vin[i].scriptSig) != 0 )
         {
             if ( eval->GetTxUnconfirmed(tx.vin[i].prevout.hash,vinTx,hashBlock) == 0 )
                 return eval->Invalid("always should find vin, but didnt");
@@ -228,119 +228,6 @@ bool RewardsExactAmounts(struct CCcontract_info *cp,Eval *eval,const CTransactio
         return eval->Invalid("mismatched inputs != outputs + txfee");
     }
     else return(true);
-}
-
-bool RewardsValidate(struct CCcontract_info *cp,Eval* eval,const CTransaction &tx, uint32_t nIn)
-{
-    uint256 txid,fundingtxid,hashBlock,vinfundingtxid; uint64_t vinsbits,sbits,APR,minseconds,maxseconds,mindeposit,amount,reward,txfee=10000; int32_t numvins,numvouts,preventCCvins,preventCCvouts,i; uint8_t funcid; CScript scriptPubKey; CTransaction fundingTx,vinTx;
-    int64_t dummy;
-    numvins = tx.vin.size();
-    numvouts = tx.vout.size();
-    preventCCvins = preventCCvouts = -1;
-    if ( numvouts < 1 )
-        return eval->Invalid("no vouts");
-    else
-    {
-        txid = tx.GetHash();
-        if ( (funcid= DecodeRewardsOpRet(txid,tx.vout[numvouts-1].scriptPubKey,sbits,fundingtxid)) != 0 )
-        {
-            if ( eval->GetTxUnconfirmed(fundingtxid,fundingTx,hashBlock) == 0 )
-                return eval->Invalid("cant find fundingtxid");
-            else if ( fundingTx.vout.size() > 0 && DecodeRewardsFundingOpRet(fundingTx.vout[fundingTx.vout.size()-1].scriptPubKey,sbits,APR,minseconds,maxseconds,mindeposit) != 'F' )
-                return eval->Invalid("fundingTx not valid");
-            if ( APR > REWARDSCC_MAXAPR )
-                return eval->Invalid("excessive APR");
-            switch ( funcid )
-            {
-                case 'F':
-                    //vins.*: normal inputs
-                    //vout.0: CC vout for funding
-                    //vout.1: normal marker vout for easy searching
-                    //vout.2: normal change
-                    //vout.n-1: opreturn 'F' sbits APR minseconds maxseconds mindeposit
-                    return eval->Invalid("unexpected RewardsValidate for createfunding");
-                    break;
-                case 'A':
-                    //vins.*: normal inputs
-                    //vout.0: CC vout for funding
-                    //vout.1: normal change
-                    //vout.n-1: opreturn 'A' sbits fundingtxid
-                    return eval->Invalid("unexpected RewardsValidate for addfunding");
-                    break;
-                case 'L':
-                    //vins.*: normal inputs
-                    //vout.0: CC vout for locked funds
-                    //vout.1: normal output to unlock address
-                    //vout.2: change
-                    //vout.n-1: opreturn 'L' sbits fundingtxid
-                    return eval->Invalid("unexpected RewardsValidate for lock");
-                    break;
-                case 'U':
-                    //vin.0: locked funds CC vout.0 from lock
-                    //vin.1+: funding CC vout.0 from 'F' and 'A' and 'U'
-                    //vout.0: funding CC change or recover normal payout
-                    //vout.1: normal output to unlock address
-                    //vout.n-1: opreturn 'U' sbits fundingtxid
-                    if ( fundingtxid == tx.vin[0].prevout.hash )
-                        return eval->Invalid("cant unlock fundingtxid");
-                    else if ( eval->GetTxUnconfirmed(tx.vin[0].prevout.hash,vinTx,hashBlock) == 0 )
-                        return eval->Invalid("always should find vin.0, but didnt");
-                    else if ( DecodeRewardsOpRet(tx.vin[0].prevout.hash,vinTx.vout[vinTx.vout.size()-1].scriptPubKey,vinsbits,vinfundingtxid) != 'L' )
-                        return eval->Invalid("can only unlock locktxid");
-                    else if ( fundingtxid != vinfundingtxid )
-                        return eval->Invalid("mismatched vinfundingtxid");
-                    for (i=0; i<numvins; i++)
-                    {
-                        if ( (*cp->ismyvin)(tx.vin[i].scriptSig) == 0 )
-                            return eval->Invalid("unexpected normal vin for unlock");
-                    }
-                    if ( !CheckTxFee(tx, txfee, chainActive.LastTip()->GetHeight(), chainActive.LastTip()->nTime, dummy) )
-                        return eval->Invalid("txfee is too high");
-                    amount = vinTx.vout[0].nValue;
-                    reward = RewardsCalc((int64_t)amount,tx.vin[0].prevout.hash,(int64_t)APR,(int64_t)minseconds,(int64_t)maxseconds,GetLatestTimestamp(eval->GetCurrentHeight()));
-                    if ( reward == 0 )
-                        return eval->Invalid("no eligible rewards");
-                    if ( numvins == 1 && tx.vout[0].scriptPubKey.IsPayToCryptoCondition() == 0 )
-                    {
-                        if ( tx.vout[1].nValue != 10000 )
-                            return eval->Invalid("wrong marker vout value");
-                        else if ( tx.vout[1].scriptPubKey != tx.vout[0].scriptPubKey )
-                            return eval->Invalid("unlock recover tx vout.1 mismatched scriptPubKey");
-                        else if ( tx.vout[0].scriptPubKey != vinTx.vout[1].scriptPubKey )
-                            return eval->Invalid("unlock recover tx vout.0 mismatched scriptPubKey");
-                        else if ( tx.vout[0].nValue > vinTx.vout[0].nValue )
-                            return eval->Invalid("unlock recover tx vout.0 mismatched amounts");
-                        else if ( tx.vout[2].nValue > 0 )
-                            return eval->Invalid("unlock recover tx vout.1 nonz amount");
-                        else return(true);
-                    }
-                    if ( vinTx.vout[0].scriptPubKey.IsPayToCryptoCondition() == 0 )
-                        return eval->Invalid("unlock tx vout.0 is normal output");
-                    else if ( numvouts != 3 )
-                        return eval->Invalid("unlock tx wrong number of vouts");
-                    else if ( tx.vout[0].scriptPubKey.IsPayToCryptoCondition() == 0 )
-                        return eval->Invalid("unlock tx vout.0 is normal output");
-                    else if ( tx.vout[1].scriptPubKey.IsPayToCryptoCondition() != 0 )
-                        return eval->Invalid("unlock tx vout.1 is CC output");
-                    else if ( tx.vout[1].scriptPubKey != vinTx.vout[1].scriptPubKey )
-                        return eval->Invalid("unlock tx vout.1 mismatched scriptPubKey");
-                    if ( RewardsExactAmounts(cp,eval,tx,txfee+tx.vout[1].nValue,sbits,fundingtxid) == 0 )
-                        return false;
-                    else if ( tx.vout[1].nValue > amount+reward )
-                        return eval->Invalid("unlock tx vout.1 isnt amount+reward");
-                    else if ( tx.vout[2].nValue > 0 )
-                        return eval->Invalid("unlock tx vout.2 isnt 0");
-                    preventCCvouts = 1;
-                    break;
-                default:
-                    fprintf(stderr,"illegal rewards funcid.(%c)\n",funcid);
-                    return eval->Invalid("unexpected rewards funcid");
-                    break;
-            }
-        } else return eval->Invalid("unexpected rewards missing funcid");
-        return(PreventCC(eval,tx,preventCCvins,numvins,preventCCvouts,numvouts));
-    }
-    return(true);
 }
 
 static uint64_t myIs_unlockedtx_inmempool(uint256 &txid,int32_t &vout,uint64_t refsbits,uint256 reffundingtxid,uint64_t needed)
@@ -492,7 +379,11 @@ bool RewardsPlanExists(struct CCcontract_info *cp,uint64_t refsbits,CPubKey rewa
 
 UniValue RewardsInfo(uint256 rewardsid)
 {
-    UniValue result(UniValue::VOBJ); uint256 hashBlock; CTransaction vintx; uint64_t lockedfunds,APR,minseconds,maxseconds,mindeposit,sbits,funding; CPubKey rewardspk; struct CCcontract_info *cp,C; char str[67],numstr[65];
+    UniValue result(UniValue::VOBJ); uint256 hashBlock; CTransaction vintx; 
+    uint64_t lockedfunds,APR,minseconds,maxseconds,mindeposit,sbits,funding; 
+    CPubKey rewardspk; 
+    char str[67],numstr[65];
+    
     if ( myGetTransaction(rewardsid,vintx,hashBlock) == 0 )
     {
         fprintf(stderr,"cant find fundingtxid\n");
@@ -518,9 +409,9 @@ UniValue RewardsInfo(uint256 rewardsid)
     result.push_back(Pair("maxseconds",maxseconds));
     sprintf(numstr,"%.8f",(double)mindeposit/COIN);
     result.push_back(Pair("mindeposit",numstr));
-    cp = CCinit(&C,EVAL_REWARDS);
-    rewardspk = GetUnspendable(cp,0);
-    funding = RewardsPlanFunds(lockedfunds,sbits,cp,rewardspk,rewardsid);
+    CCRewardsContract_info C;
+    rewardspk = C.GetUnspendable();
+    funding = RewardsPlanFunds(lockedfunds,sbits,&C,rewardspk,rewardsid);
     sprintf(numstr,"%.8f",(double)funding/COIN);
     result.push_back(Pair("funding",numstr));
     sprintf(numstr,"%.8f",(double)lockedfunds/COIN);
@@ -530,9 +421,11 @@ UniValue RewardsInfo(uint256 rewardsid)
 
 UniValue RewardsList()
 {
-    UniValue result(UniValue::VARR); std::vector<uint256> txids; struct CCcontract_info *cp,C; uint256 txid,hashBlock; CTransaction vintx; uint64_t sbits,APR,minseconds,maxseconds,mindeposit; char str[65];
-    cp = CCinit(&C,EVAL_REWARDS);
-    SetCCtxids(txids,cp->normaladdr,false,cp->evalcode,zeroid,'F');
+    UniValue result(UniValue::VARR); std::vector<uint256> txids; 
+    uint256 txid,hashBlock; CTransaction vintx; uint64_t sbits,APR,minseconds,maxseconds,mindeposit; char str[65];
+    
+    CCRewardsContract_info C;
+    SetCCtxids(txids,C.normaladdr,false,C.evalcode,zeroid,'F');
     for (std::vector<uint256>::const_iterator it=txids.begin(); it!=txids.end(); it++)
     {
         txid = *it;
@@ -550,7 +443,7 @@ UniValue RewardsList()
 std::string RewardsCreateFunding(uint64_t txfee,char *planstr,int64_t funds,int64_t APR,int64_t minseconds,int64_t maxseconds,int64_t mindeposit)
 {
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
-    CPubKey mypk,rewardspk; CScript opret; uint64_t sbits,a,b,c,d; struct CCcontract_info *cp,C;
+    CPubKey mypk,rewardspk; CScript opret; uint64_t sbits,a,b,c,d;
     if ( funds < COIN || mindeposit < 0 || minseconds < 0 || maxseconds < 0 )
     {
         fprintf(stderr,"negative parameter error\n");
@@ -561,22 +454,23 @@ std::string RewardsCreateFunding(uint64_t txfee,char *planstr,int64_t funds,int6
         fprintf(stderr,"25%% APR is maximum\n");
         return("");
     }
-    cp = CCinit(&C,EVAL_REWARDS);
+
     if ( txfee == 0 )
         txfee = 10000;
     mypk = pubkey2pk(Mypubkey());
-    rewardspk = GetUnspendable(cp,0);
+    CCRewardsContract_info C;
+    rewardspk = C.GetUnspendable();
     sbits = stringbits(planstr);
-    if ( RewardsPlanExists(cp,sbits,rewardspk,a,b,c,d) != 0 )
+    if ( RewardsPlanExists(&C,sbits,rewardspk,a,b,c,d) != 0 )
     {
         fprintf(stderr,"Rewards plan (%s) already exists\n",planstr);
         return("");
     }
     if ( AddNormalinputs(mtx,mypk,funds+2*txfee,64) > 0 )
     {
-        mtx.vout.push_back(MakeCC1vout(cp->evalcode,funds,rewardspk));
+        mtx.vout.push_back(MakeCC1vout(C.evalcode,funds,rewardspk));
         mtx.vout.push_back(CTxOut(txfee,CScript() << ParseHex(HexStr(rewardspk)) << OP_CHECKSIG));
-        return(FinalizeCCTx(0,cp,mtx,mypk,txfee,EncodeRewardsFundingOpRet('F',sbits,APR,minseconds,maxseconds,mindeposit)));
+        return(FinalizeCCTx(0,&C,mtx,mypk,txfee,EncodeRewardsFundingOpRet('F',sbits,APR,minseconds,maxseconds,mindeposit)));
     }
     fprintf(stderr,"cant find enough inputs\n");
     return("");
@@ -585,19 +479,20 @@ std::string RewardsCreateFunding(uint64_t txfee,char *planstr,int64_t funds,int6
 std::string RewardsAddfunding(uint64_t txfee,char *planstr,uint256 fundingtxid,int64_t amount)
 {
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
-    CPubKey mypk,rewardspk; CScript opret; uint64_t sbits,a,b,c,d; struct CCcontract_info *cp,C;
+    CPubKey mypk,rewardspk; CScript opret; uint64_t sbits,a,b,c,d;
     if ( amount < 0 )
     {
         fprintf(stderr,"negative parameter error\n");
         return("");
     }
-    cp = CCinit(&C,EVAL_REWARDS);
+
     if ( txfee == 0 )
         txfee = 10000;
     mypk = pubkey2pk(Mypubkey());
-    rewardspk = GetUnspendable(cp,0);
+    CCRewardsContract_info C;
+    rewardspk = C.GetUnspendable();
     sbits = stringbits(planstr);
-    if ( RewardsPlanExists(cp,sbits,rewardspk,a,b,c,d) == 0 )
+    if ( RewardsPlanExists(&C,sbits,rewardspk,a,b,c,d) == 0 )
     {
         CCerror = strprintf("Rewards plan %s doesnt exist\n",planstr);
         fprintf(stderr,"%s\n",CCerror.c_str());
@@ -606,8 +501,8 @@ std::string RewardsAddfunding(uint64_t txfee,char *planstr,uint256 fundingtxid,i
     sbits = stringbits(planstr);
     if ( AddNormalinputs(mtx,mypk,amount+txfee,64) > 0 )
     {
-        mtx.vout.push_back(MakeCC1vout(cp->evalcode,amount,rewardspk));
-        return(FinalizeCCTx(0,cp,mtx,mypk,txfee,EncodeRewardsOpRet('A',sbits,fundingtxid)));
+        mtx.vout.push_back(MakeCC1vout(C.evalcode,amount,rewardspk));
+        return(FinalizeCCTx(0,&C,mtx,mypk,txfee,EncodeRewardsOpRet('A',sbits,fundingtxid)));
     } else {
         CCerror = "cant find enough inputs";
         fprintf(stderr,"%s\n", CCerror.c_str());
@@ -620,20 +515,21 @@ std::string RewardsAddfunding(uint64_t txfee,char *planstr,uint256 fundingtxid,i
 std::string RewardsLock(uint64_t txfee,char *planstr,uint256 fundingtxid,int64_t deposit)
 {
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
-    CPubKey mypk,rewardspk; CScript opret; uint64_t lockedfunds,sbits,funding,APR,minseconds,maxseconds,mindeposit; struct CCcontract_info *cp,C;
+    CPubKey mypk,rewardspk; CScript opret; uint64_t lockedfunds,sbits,funding,APR,minseconds,maxseconds,mindeposit;
     if ( deposit < txfee )
     {
         CCerror = "deposit amount less than txfee";
         fprintf(stderr,"%s\n",CCerror.c_str());
         return("");
     }
-    cp = CCinit(&C,EVAL_REWARDS);
+
     if ( txfee == 0 )
         txfee = 10000;
     mypk = pubkey2pk(Mypubkey());
-    rewardspk = GetUnspendable(cp,0);
+    CCRewardsContract_info C;
+    rewardspk = C.GetUnspendable();
     sbits = stringbits(planstr);
-    if ( RewardsPlanExists(cp,sbits,rewardspk,APR,minseconds,maxseconds,mindeposit) == 0 )
+    if ( RewardsPlanExists(&C,sbits,rewardspk,APR,minseconds,maxseconds,mindeposit) == 0 )
     {
         CCerror = strprintf("Rewards plan %s doesnt exist\n",planstr);
         fprintf(stderr,"%s\n",CCerror.c_str());
@@ -645,13 +541,13 @@ std::string RewardsLock(uint64_t txfee,char *planstr,uint256 fundingtxid,int64_t
         fprintf(stderr,"%s\n",CCerror.c_str());
         return("");
     }
-    if ( (funding= RewardsPlanFunds(lockedfunds,sbits,cp,rewardspk,fundingtxid)) >= deposit ) // arbitrary cmpval
+    if ( (funding= RewardsPlanFunds(lockedfunds,sbits,&C,rewardspk,fundingtxid)) >= deposit ) // arbitrary cmpval
     {
         if ( AddNormalinputs(mtx,mypk,deposit+2*txfee,64) > 0 )
         {
-            mtx.vout.push_back(MakeCC1vout(cp->evalcode,deposit,rewardspk));
+            mtx.vout.push_back(MakeCC1vout(C.evalcode,deposit,rewardspk));
             mtx.vout.push_back(CTxOut(txfee,CScript() << ParseHex(HexStr(mypk)) << OP_CHECKSIG));
-            return(FinalizeCCTx(0,cp,mtx,mypk,txfee,EncodeRewardsOpRet('L',sbits,fundingtxid)));
+            return(FinalizeCCTx(0,&C,mtx,mypk,txfee,EncodeRewardsOpRet('L',sbits,fundingtxid)));
         } else {
             CCerror = strprintf("cant find enough inputs %.8f not enough for %.8f, make sure you imported privkey for the -pubkey address\n",(double)funding/COIN,(double)deposit/COIN);
             fprintf(stderr,"%s\n",CCerror.c_str());
@@ -664,11 +560,13 @@ std::string RewardsLock(uint64_t txfee,char *planstr,uint256 fundingtxid,int64_t
 std::string RewardsUnlock(uint64_t txfee,char *planstr,uint256 fundingtxid,uint256 locktxid)
 {
     CMutableTransaction firstmtx,mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
-    CTransaction tx; char coinaddr[64]; CPubKey mypk,rewardspk; CScript scriptPubKey,ignore; uint256 hashBlock; uint64_t sbits,APR,minseconds,maxseconds,mindeposit; int64_t funding,reward=0,amount=0,inputs,CCchange=0; struct CCcontract_info *cp,C;
-    cp = CCinit(&C,EVAL_REWARDS);
+    CTransaction tx; char coinaddr[64]; CPubKey mypk,rewardspk; CScript scriptPubKey,ignore; uint256 hashBlock; 
+    uint64_t sbits,APR,minseconds,maxseconds,mindeposit; int64_t funding,reward=0,amount=0,inputs,CCchange=0; 
+    
     if ( txfee == 0 )
         txfee = 10000;
-    rewardspk = GetUnspendable(cp,0);
+    CCRewardsContract_info C;
+    rewardspk = C.GetUnspendable();
     mypk = pubkey2pk(Mypubkey());
     sbits = stringbits(planstr);
     if ( locktxid == fundingtxid )
@@ -677,7 +575,7 @@ std::string RewardsUnlock(uint64_t txfee,char *planstr,uint256 fundingtxid,uint2
         CCerror = "Rewards plan cant unlock fundingtxid";
         return("");
     }
-    if ( RewardsPlanExists(cp,sbits,rewardspk,APR,minseconds,maxseconds,mindeposit) == 0 )
+    if ( RewardsPlanExists(&C,sbits,rewardspk,APR,minseconds,maxseconds,mindeposit) == 0 )
     {
         fprintf(stderr,"Rewards plan %s doesnt exist\n",planstr);
         CCerror = "Rewards plan does not exist";
@@ -685,10 +583,10 @@ std::string RewardsUnlock(uint64_t txfee,char *planstr,uint256 fundingtxid,uint2
     }
     fprintf(stderr,"APR %.8f minseconds.%llu maxseconds.%llu mindeposit %.8f\n",(double)APR/COIN,(long long)minseconds,(long long)maxseconds,(double)mindeposit/COIN);
     if ( locktxid == zeroid )
-        amount = AddRewardsInputs(scriptPubKey,maxseconds,cp,mtx,rewardspk,(1LL << 30),1,sbits,fundingtxid);
+        amount = AddRewardsInputs(scriptPubKey,maxseconds,&C,mtx,rewardspk,(1LL << 30),1,sbits,fundingtxid);
     else
     {
-        GetCCaddress(cp,coinaddr,rewardspk);
+        GetCCaddress(&C,coinaddr,rewardspk);
         if ( (amount= CCutxovalue(coinaddr,locktxid,0,1)) == 0 )
         {
             fprintf(stderr,"%s locktxid/v0 is spent\n",coinaddr);
@@ -715,20 +613,20 @@ std::string RewardsUnlock(uint64_t txfee,char *planstr,uint256 fundingtxid,uint2
             if ( reward > txfee )
             {
                 firstmtx = mtx;
-                if ( (inputs= AddRewardsInputs(ignore,0,cp,mtx,rewardspk,reward+txfee,30,sbits,fundingtxid)) >= reward+txfee )
+                if ( (inputs= AddRewardsInputs(ignore,0,&C,mtx,rewardspk,reward+txfee,30,sbits,fundingtxid)) >= reward+txfee )
                 {
                     if ( inputs >= (reward + 2*txfee) )
                         CCchange = (inputs - (reward + txfee));
                     fprintf(stderr,"inputs %.8f CCchange %.8f amount %.8f reward %.8f\n",(double)inputs/COIN,(double)CCchange/COIN,(double)amount/COIN,(double)reward/COIN);
-                    mtx.vout.push_back(MakeCC1vout(cp->evalcode,CCchange,rewardspk));
+                    mtx.vout.push_back(MakeCC1vout(C.evalcode,CCchange,rewardspk));
                     mtx.vout.push_back(CTxOut(amount+reward,scriptPubKey));
-                    return(FinalizeCCTx(-1LL,cp,mtx,mypk,txfee,EncodeRewardsOpRet('U',sbits,fundingtxid)));
+                    return(FinalizeCCTx(-1LL,&C,mtx,mypk,txfee,EncodeRewardsOpRet('U',sbits,fundingtxid)));
                 }
                 else
                 {
                     firstmtx.vout.push_back(CTxOut(amount-txfee*2,scriptPubKey));
                     fprintf(stderr,"not enough rewards funds to payout %.8f, recover mode tx\n",(double)(reward+txfee)/COIN);
-                    return(FinalizeCCTx(-1LL,cp,firstmtx,mypk,txfee,EncodeRewardsOpRet('U',sbits,fundingtxid)));
+                    return(FinalizeCCTx(-1LL,&C,firstmtx,mypk,txfee,EncodeRewardsOpRet('U',sbits,fundingtxid)));
                 }
             }
             else
@@ -750,4 +648,122 @@ std::string RewardsUnlock(uint64_t txfee,char *planstr,uint256 fundingtxid,uint2
     }
     fprintf(stderr,"amount %.8f -> reward %.8f\n",(double)amount/COIN,(double)reward/COIN);
     return("");
+}
+
+bool CCRewardsContract_info::validate(Eval* eval, const CTransaction &tx, uint32_t nIn)
+{
+    uint256 txid,fundingtxid,hashBlock,vinfundingtxid; 
+    uint64_t vinsbits,sbits,APR,minseconds,maxseconds,mindeposit,amount,reward,txfee=10000; 
+    int32_t numvins,numvouts,preventCCvins,preventCCvouts,i; 
+    uint8_t funcid; 
+    CScript scriptPubKey; 
+    CTransaction fundingTx,vinTx;
+    int64_t dummy;
+    numvins = tx.vin.size();
+    numvouts = tx.vout.size();
+    preventCCvins = preventCCvouts = -1;
+    if ( numvouts < 1 )
+        return eval->Invalid("no vouts");
+    else
+    {
+        txid = tx.GetHash();
+        if ( (funcid= DecodeRewardsOpRet(txid,tx.vout[numvouts-1].scriptPubKey,sbits,fundingtxid)) != 0 )
+        {
+            if ( eval->GetTxUnconfirmed(fundingtxid,fundingTx,hashBlock) == 0 )
+                return eval->Invalid("cant find fundingtxid");
+            else if ( fundingTx.vout.size() > 0 && DecodeRewardsFundingOpRet(fundingTx.vout[fundingTx.vout.size()-1].scriptPubKey,sbits,APR,minseconds,maxseconds,mindeposit) != 'F' )
+                return eval->Invalid("fundingTx not valid");
+            if ( APR > REWARDSCC_MAXAPR )
+                return eval->Invalid("excessive APR");
+            switch ( funcid )
+            {
+                case 'F':
+                    //vins.*: normal inputs
+                    //vout.0: CC vout for funding
+                    //vout.1: normal marker vout for easy searching
+                    //vout.2: normal change
+                    //vout.n-1: opreturn 'F' sbits APR minseconds maxseconds mindeposit
+                    return eval->Invalid("unexpected RewardsValidate for createfunding");
+                    break;
+                case 'A':
+                    //vins.*: normal inputs
+                    //vout.0: CC vout for funding
+                    //vout.1: normal change
+                    //vout.n-1: opreturn 'A' sbits fundingtxid
+                    return eval->Invalid("unexpected RewardsValidate for addfunding");
+                    break;
+                case 'L':
+                    //vins.*: normal inputs
+                    //vout.0: CC vout for locked funds
+                    //vout.1: normal output to unlock address
+                    //vout.2: change
+                    //vout.n-1: opreturn 'L' sbits fundingtxid
+                    return eval->Invalid("unexpected RewardsValidate for lock");
+                    break;
+                case 'U':
+                    //vin.0: locked funds CC vout.0 from lock
+                    //vin.1+: funding CC vout.0 from 'F' and 'A' and 'U'
+                    //vout.0: funding CC change or recover normal payout
+                    //vout.1: normal output to unlock address
+                    //vout.n-1: opreturn 'U' sbits fundingtxid
+                    if ( fundingtxid == tx.vin[0].prevout.hash )
+                        return eval->Invalid("cant unlock fundingtxid");
+                    else if ( eval->GetTxUnconfirmed(tx.vin[0].prevout.hash,vinTx,hashBlock) == 0 )
+                        return eval->Invalid("always should find vin.0, but didnt");
+                    else if ( DecodeRewardsOpRet(tx.vin[0].prevout.hash,vinTx.vout[vinTx.vout.size()-1].scriptPubKey,vinsbits,vinfundingtxid) != 'L' )
+                        return eval->Invalid("can only unlock locktxid");
+                    else if ( fundingtxid != vinfundingtxid )
+                        return eval->Invalid("mismatched vinfundingtxid");
+                    for (i=0; i<numvins; i++)
+                    {
+                        if ( ismyvin(tx.vin[i].scriptSig) == 0 )
+                            return eval->Invalid("unexpected normal vin for unlock");
+                    }
+                    if ( !CheckTxFee(tx, txfee, chainActive.LastTip()->GetHeight(), chainActive.LastTip()->nTime, dummy) )
+                        return eval->Invalid("txfee is too high");
+                    amount = vinTx.vout[0].nValue;
+                    reward = RewardsCalc((int64_t)amount,tx.vin[0].prevout.hash,(int64_t)APR,(int64_t)minseconds,(int64_t)maxseconds,GetLatestTimestamp(eval->GetCurrentHeight()));
+                    if ( reward == 0 )
+                        return eval->Invalid("no eligible rewards");
+                    if ( numvins == 1 && tx.vout[0].scriptPubKey.IsPayToCryptoCondition() == 0 )
+                    {
+                        if ( tx.vout[1].nValue != 10000 )
+                            return eval->Invalid("wrong marker vout value");
+                        else if ( tx.vout[1].scriptPubKey != tx.vout[0].scriptPubKey )
+                            return eval->Invalid("unlock recover tx vout.1 mismatched scriptPubKey");
+                        else if ( tx.vout[0].scriptPubKey != vinTx.vout[1].scriptPubKey )
+                            return eval->Invalid("unlock recover tx vout.0 mismatched scriptPubKey");
+                        else if ( tx.vout[0].nValue > vinTx.vout[0].nValue )
+                            return eval->Invalid("unlock recover tx vout.0 mismatched amounts");
+                        else if ( tx.vout[2].nValue > 0 )
+                            return eval->Invalid("unlock recover tx vout.1 nonz amount");
+                        else return(true);
+                    }
+                    if ( vinTx.vout[0].scriptPubKey.IsPayToCryptoCondition() == 0 )
+                        return eval->Invalid("unlock tx vout.0 is normal output");
+                    else if ( numvouts != 3 )
+                        return eval->Invalid("unlock tx wrong number of vouts");
+                    else if ( tx.vout[0].scriptPubKey.IsPayToCryptoCondition() == 0 )
+                        return eval->Invalid("unlock tx vout.0 is normal output");
+                    else if ( tx.vout[1].scriptPubKey.IsPayToCryptoCondition() != 0 )
+                        return eval->Invalid("unlock tx vout.1 is CC output");
+                    else if ( tx.vout[1].scriptPubKey != vinTx.vout[1].scriptPubKey )
+                        return eval->Invalid("unlock tx vout.1 mismatched scriptPubKey");
+                    if ( RewardsExactAmounts(this,eval,tx,txfee+tx.vout[1].nValue,sbits,fundingtxid) == 0 )
+                        return false;
+                    else if ( tx.vout[1].nValue > amount+reward )
+                        return eval->Invalid("unlock tx vout.1 isnt amount+reward");
+                    else if ( tx.vout[2].nValue > 0 )
+                        return eval->Invalid("unlock tx vout.2 isnt 0");
+                    preventCCvouts = 1;
+                    break;
+                default:
+                    fprintf(stderr,"illegal rewards funcid.(%c)\n",funcid);
+                    return eval->Invalid("unexpected rewards funcid");
+                    break;
+            }
+        } else return eval->Invalid("unexpected rewards missing funcid");
+        return(PreventCC(eval,tx,preventCCvins,numvins,preventCCvouts,numvouts));
+    }
+    return(true);
 }

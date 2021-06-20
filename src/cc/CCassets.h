@@ -12,6 +12,7 @@
  * Removal or modification of this copyright notice is prohibited.            *
  *                                                                            *
  ******************************************************************************/
+#pragma once
 
 
 /*
@@ -20,10 +21,9 @@
  CCassetsCore has functions that are used in two contexts, both during rpc transaction create time and also during the blockchain validation. Using the identical functions is a good way to prevent them from being mismatched. The must match or the transaction will get rejected.
  */
 
-#ifndef CC_ASSETS_H
-#define CC_ASSETS_H
-
 #include "CCinclude.h"
+
+#include "CCtokens.h"
 
 // CCcustom
 bool AssetsValidate(struct CCcontract_info *cp,Eval* eval,const CTransaction &tx, uint32_t nIn);
@@ -44,15 +44,9 @@ int64_t AssetValidateSellvin(struct CCcontract_info *cp,Eval* eval,int64_t &tmpp
 bool AssetCalcAmounts(struct CCcontract_info *cpAssets, int64_t &inputs, int64_t &outputs, Eval* eval, const CTransaction &tx, uint256 assetid);
 
 // CCassetstx
-//int64_t GetAssetBalance(CPubKey pk,uint256 tokenid); // --> GetTokenBalance()
 int64_t AddAssetInputs(struct CCcontract_info *cp, CMutableTransaction &mtx, CPubKey pk, uint256 assetid, int64_t total, int32_t maxinputs);
 
 UniValue AssetOrders(uint256 tokenid, CPubKey pubkey, uint8_t additionalEvalCode);
-//UniValue AssetInfo(uint256 tokenid);
-//UniValue AssetList();
-//std::string CreateAsset(int64_t txfee,int64_t assetsupply,std::string name,std::string description);
-//std::string AssetTransfer(int64_t txfee,uint256 assetid,std::vector<uint8_t> destpubkey,int64_t total);
-//std::string AssetConvert(int64_t txfee,uint256 assetid,std::vector<uint8_t> destpubkey,int64_t total,int32_t evalcode);
 
 std::string CreateBuyOffer(int64_t txfee,int64_t bidamount,uint256 assetid,int64_t pricetotal);
 std::string CancelBuyOffer(int64_t txfee,uint256 assetid,uint256 bidtxid);
@@ -62,4 +56,19 @@ std::string CreateSwap(int64_t txfee,int64_t askamount,uint256 assetid,uint256 a
 std::string CancelSell(int64_t txfee,uint256 assetid,uint256 asktxid);
 std::string FillSell(int64_t txfee,uint256 assetid,uint256 assetid2,uint256 asktxid,int64_t fillamount);
 
-#endif
+struct CCAssetContract_info : public CCcontract_info
+{
+    CCAssetContract_info() : CCcontract_info()
+    {
+        evalcode = EVAL_ASSETS;
+        strcpy(unspendableCCaddr, "RGKRjeTBw4LYFotSDLT6RWzMHbhXri6BG6");
+        strcpy(normaladdr, "RFYE2yL3KknWdHK6uNhvWacYsCUtwzjY3u");
+        strcpy(CChexstr, "02adf84e0e075cf90868bd4e3d34a03420e034719649c41f371fc70d8e33aa2702");
+        uint8_t AssetsCCpriv[32] = { 0x9b, 0x17, 0x66, 0xe5, 0x82, 0x66, 0xac, 0xb6, 0xba, 0x43, 
+                0x83, 0x74, 0xf7, 0x63, 0x11, 0x3b, 0xf0, 0xf3, 0x50, 0x6f, 0xd9, 0x6b, 0x67, 
+                0x85, 0xf9, 0x7a, 0xf0, 0x54, 0x4d, 0xb1, 0x30, 0x77 };
+        memcpy(CCpriv, AssetsCCpriv,32);
+    }
+    virtual bool validate(Eval* eval, const CTransaction &tx, uint32_t nIn) override;
+};
+

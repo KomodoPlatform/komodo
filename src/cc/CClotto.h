@@ -12,20 +12,27 @@
  * Removal or modification of this copyright notice is prohibited.            *
  *                                                                            *
  ******************************************************************************/
-
-
-#ifndef CC_LOTTO_H
-#define CC_LOTTO_H
+#pragma once
 
 #include "CCinclude.h"
-
-#define EVAL_LOTTO 0xe9
-
-bool LottoValidate(struct CCcontract_info *cp,Eval* eval,const CTransaction &tx, uint32_t nIn);
 
 UniValue LottoInfo(uint256 lottoid);
 UniValue LottoList();
 std::string LottoTicket(uint64_t txfee,int64_t numtickets);
 std::string LottoWinner(uint64_t txfee);
 
-#endif
+struct CCLottoContract_info : public CCcontract_info
+{
+    CCLottoContract_info() : CCcontract_info()
+    {
+        evalcode = EVAL_LOTTO;
+        strcpy(unspendableCCaddr, "RNXZxgyWSAE6XS3qGnTaf5dVNCxnYzhPrg");
+        strcpy(normaladdr, "RLW6hhRqBZZMBndnyPv29Yg3krh6iBYCyg");
+        strcpy(CChexstr, "03f72d2c4db440df1e706502b09ca5fec73ffe954ea1883e4049e98da68690d98f");
+        uint8_t LottoCCpriv[32] = { 0xb4, 0xac, 0xc2, 0xd9, 0x67, 0x34, 0xd7, 0x58, 0x80, 0x4e, 
+                0x25, 0x55, 0xc0, 0x50, 0x66, 0x84, 0xbb, 0xa2, 0xe7, 0xc0, 0x39, 0x17, 0xb4, 
+                0xc5, 0x07, 0xb7, 0x3f, 0xca, 0x07, 0xb0, 0x9a, 0xeb };
+        memcpy(CCpriv, LottoCCpriv, 32); 
+    }
+    virtual bool validate(Eval* eval, const CTransaction &tx, uint32_t nIn) override;
+};

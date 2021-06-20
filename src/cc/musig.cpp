@@ -755,7 +755,7 @@ UniValue musig_send(uint64_t txfee,struct CCcontract_info *cp,cJSON *params)
     if ( txfee == 0 )
         txfee = MUSIG_TXFEE;
     mypk = pubkey2pk(Mypubkey());
-    musigpk = GetUnspendable(cp,0);
+    musigpk = cp->GetUnspendable();
     if ( params != 0 && (n= cJSON_GetArraySize(params)) > 0 )
     {
         if ( n == 2 && (hexstr= jstr(jitem(params,0),0)) != 0 && is_hexstr(hexstr,0) == 66 )

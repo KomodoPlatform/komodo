@@ -2676,7 +2676,7 @@ UniValue sudoku_generate(uint64_t txfee,struct CCcontract_info *cp,cJSON *params
     }
     priv2addr(coinaddr,pub33,privkey);
     pk = buf2pk(pub33);
-    sudokupk = GetUnspendable(cp,0);
+    sudokupk = cp->GetUnspendable();
     result.push_back(Pair("srand",(int)srandi));
     result.push_back(Pair("amount",ValueFromAmount(amount)));
     if ( (inputsum= AddCClibInputs(cp,mtx,sudokupk,amount+2*txfee,16,cp->unspendableCCaddr,1)) >= amount+2*txfee )
@@ -2770,7 +2770,7 @@ UniValue sudoku_pending(uint64_t txfee,struct CCcontract_info *cp,cJSON *params)
     UniValue result(UniValue::VOBJ),a(UniValue::VARR);
     char coinaddr[64],unsolved[82]; int64_t nValue,total=0; uint256 txid,hashBlock; CTransaction tx; int32_t vout,numvouts; CPubKey sudokupk; CBlockIndex *pindex;
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs;
-    sudokupk = GetUnspendable(cp,0);
+    sudokupk = cp->GetUnspendable();
     GetCCaddress(cp,coinaddr,sudokupk);
     SetCCunspents(unspentOutputs,coinaddr,true);
     for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::const_iterator it=unspentOutputs.begin(); it!=unspentOutputs.end(); it++)

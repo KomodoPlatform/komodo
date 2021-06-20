@@ -61,6 +61,8 @@
 
 #include "komodo_defs.h"
 #include <string.h>
+#include "cc/CCPayments.h"
+#include "cc/CCImportGateway.h"
 
 using namespace std;
 
@@ -5634,7 +5636,7 @@ int32_t ensure_CCrequirements(uint8_t evalcode)
 UniValue CCaddress(struct CCcontract_info *cp,char *name,std::vector<unsigned char> &pubkey)
 {
     UniValue result(UniValue::VOBJ); char destaddr[64],str[64]; CPubKey mypk,pk;
-    pk = GetUnspendable(cp,0);
+    pk = cp->GetUnspendable();
     GetCCaddress(cp,destaddr,pk);
     if ( strcmp(destaddr,cp->unspendableCCaddr) != 0 )
     {
@@ -5824,234 +5826,246 @@ UniValue setstakingsplit(const UniValue& params, bool fHelp, const CPubKey& mypk
 
 UniValue channelsaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    UniValue result(UniValue::VOBJ); struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-
-    cp = CCinit(&C,EVAL_CHANNELS);
     if ( fHelp || params.size() != 1 )
         throw runtime_error("channelsaddress pubkey\n");
-    if ( ensure_CCrequirements(cp->evalcode) < 0 )
+
+    CCChannelsContract_info C;
+    if ( ensure_CCrequirements(C.evalcode) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
+
+    std::vector<unsigned char> pubkey;
     pubkey = ParseHex(params[0].get_str().c_str());
-    return(CCaddress(cp,(char *)"Channels",pubkey));
+    return CCaddress(&C,(char *)"Channels",pubkey);
 }
 
 UniValue cclibaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey; uint8_t evalcode = EVAL_FIRSTUSER;
     if ( fHelp || params.size() > 2 )
         throw runtime_error("cclibaddress [evalcode] [pubkey]\n");
+
+    std::vector<unsigned char> pubkey; 
+    uint8_t evalcode = EVAL_FIRSTUSER;
     if ( params.size() >= 1 )
     {
         evalcode = atoi(params[0].get_str().c_str());
         if ( evalcode < EVAL_FIRSTUSER || evalcode > EVAL_LASTUSER )
             throw runtime_error("evalcode not between EVAL_FIRSTUSER and EVAL_LASTUSER\n");
+
         if ( params.size() == 2 )
             pubkey = ParseHex(params[1].get_str().c_str());
     }
-    cp = CCinit(&C,evalcode);
+
+    //NOTE: evalcode will be between EVAL_FIRSTUSER and EVAL_LASTUSER
+    std::shared_ptr<CCcontract_info> cp = nullptr; 
+    try
+    {
+        cp = CCinit(evalcode);
+    }
+    catch(const std::logic_error& le)
+    {
+        throw runtime_error("error creating *cp\n");
+    }
     if ( ensure_CCrequirements(cp->evalcode) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
-    if ( cp == 0 )
-        throw runtime_error("error creating *cp\n");
-    return(CCaddress(cp,(char *)"CClib",pubkey));
+    return(CCaddress(cp.get(),(char *)"CClib",pubkey));
 }
 
 UniValue cclibinfo(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C; uint8_t evalcode = EVAL_FIRSTUSER;
     if ( fHelp || params.size() > 0 )
         throw runtime_error("cclibinfo\n");
+    
     if ( ensure_CCrequirements(0) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
-    cp = CCinit(&C,evalcode);
-    return(CClib_info(cp));
+
+    std::shared_ptr<CCcontract_info> cp = CCinit(EVAL_FIRSTUSER);
+
+    return CClib_info(cp.get());
 }
 
 UniValue cclib(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C; char *method,*jsonstr=0; uint8_t evalcode = EVAL_FIRSTUSER;
-    std::string vobjJsonSerialized;
-
     if ( fHelp || params.size() > 3 )
         throw runtime_error("cclib method [evalcode] [JSON params]\n");
+
     if ( ASSETCHAINS_CCLIB.size() == 0 )
         throw runtime_error("no -ac_cclib= specified\n");
+
     if ( ensure_CCrequirements(0) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
+
     const CKeyStore& keystore = *pwalletMain;
     LOCK2(cs_main, pwalletMain->cs_wallet);
-    method = (char *)params[0].get_str().c_str();
+    
+    char *method = (char *)params[0].get_str().c_str();
+    char *jsonstr = nullptr; 
+
+    uint8_t evalcode = EVAL_FIRSTUSER;
     if ( params.size() >= 2 )
     {
         evalcode = atoi(params[1].get_str().c_str());
         if ( evalcode < EVAL_FIRSTUSER || evalcode > EVAL_LASTUSER )
         {
-            //printf("evalcode.%d vs (%d, %d)\n",evalcode,EVAL_FIRSTUSER,EVAL_LASTUSER);
             throw runtime_error("evalcode not between EVAL_FIRSTUSER and EVAL_LASTUSER\n");
         }
         if ( params.size() == 3 )
         {
             if (params[2].getType() == UniValue::VOBJ) {
-                vobjJsonSerialized = params[2].write(0, 0);
+                std::string vobjJsonSerialized = params[2].write(0, 0);
                 jsonstr = (char *)vobjJsonSerialized.c_str();
             }
             else  // VSTR assumed
                 jsonstr = (char *)params[2].get_str().c_str();
-            //fprintf(stderr,"params.(%s %s %s)\n",params[0].get_str().c_str(),params[1].get_str().c_str(),jsonstr);
         }
     }
-    cp = CCinit(&C,evalcode);
-    return(CClib(cp,method,jsonstr));
+    // NOTE: evalcode will be between EVAL_FIRSTUSER and EVAL_LASTUSER
+    std::shared_ptr<CCcontract_info> cp = CCinit(evalcode);
+    return CClib(cp.get(),method,jsonstr);
 }
 
 UniValue payments_release(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C;
     if ( fHelp || params.size() != 1 )
         throw runtime_error("paymentsrelease \"[%22createtxid%22,amount,(skipminimum)]\"\n");
     if ( ensure_CCrequirements(EVAL_PAYMENTS) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
     const CKeyStore& keystore = *pwalletMain;
     LOCK2(cs_main, pwalletMain->cs_wallet);
-    cp = CCinit(&C,EVAL_PAYMENTS);
-    return(PaymentsRelease(cp,(char *)params[0].get_str().c_str()));
+    CCPaymentsContract_info C;
+    return(PaymentsRelease(&C,(char *)params[0].get_str().c_str()));
 }
 
 UniValue payments_fund(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C;
     if ( fHelp || params.size() != 1 )
         throw runtime_error("paymentsfund \"[%22createtxid%22,amount(,useopret)]\"\n");
     if ( ensure_CCrequirements(EVAL_PAYMENTS) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
     const CKeyStore& keystore = *pwalletMain;
     LOCK2(cs_main, pwalletMain->cs_wallet);
-    cp = CCinit(&C,EVAL_PAYMENTS);
-    return(PaymentsFund(cp,(char *)params[0].get_str().c_str()));
+    CCPaymentsContract_info C;
+    return(PaymentsFund(&C,(char *)params[0].get_str().c_str()));
 }
 
 UniValue payments_merge(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C;
     if ( fHelp || params.size() != 1 )
         throw runtime_error("paymentsmerge \"[%22createtxid%22]\"\n");
     if ( ensure_CCrequirements(EVAL_PAYMENTS) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
     const CKeyStore& keystore = *pwalletMain;
     LOCK2(cs_main, pwalletMain->cs_wallet);
-    cp = CCinit(&C,EVAL_PAYMENTS);
-    return(PaymentsMerge(cp,(char *)params[0].get_str().c_str()));
+    CCPaymentsContract_info C;
+    return(PaymentsMerge(&C,(char *)params[0].get_str().c_str()));
 }
 
 UniValue payments_txidopret(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C;
     if ( fHelp || params.size() != 1 )
         throw runtime_error("paymentstxidopret \"[allocation,%22scriptPubKey%22(,%22destopret%22)]\"\n");
     if ( ensure_CCrequirements(EVAL_PAYMENTS) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
     const CKeyStore& keystore = *pwalletMain;
     LOCK2(cs_main, pwalletMain->cs_wallet);
-    cp = CCinit(&C,EVAL_PAYMENTS);
-    return(PaymentsTxidopret(cp,(char *)params[0].get_str().c_str()));
+    CCPaymentsContract_info C;
+    return(PaymentsTxidopret(&C,(char *)params[0].get_str().c_str()));
 }
 
 UniValue payments_create(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C;
     if ( fHelp || params.size() != 1 )
         throw runtime_error("paymentscreate \"[lockedblocks,minamount,%22paytxid0%22,...,%22paytxidN%22]\"\n");
     if ( ensure_CCrequirements(EVAL_PAYMENTS) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
     const CKeyStore& keystore = *pwalletMain;
     LOCK2(cs_main, pwalletMain->cs_wallet);
-    cp = CCinit(&C,EVAL_PAYMENTS);
-    return(PaymentsCreate(cp,(char *)params[0].get_str().c_str()));
+    CCPaymentsContract_info C;
+    return(PaymentsCreate(&C,(char *)params[0].get_str().c_str()));
 }
 
 UniValue payments_airdrop(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C;
     if ( fHelp || params.size() != 1 )
         throw runtime_error("paymentsairdrop \"[lockedblocks,minamount,mintoaddress,top,bottom,fixedFlag,%22excludeAddress%22,...,%22excludeAddressN%22]\"\n");
     if ( ensure_CCrequirements(EVAL_PAYMENTS) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
     const CKeyStore& keystore = *pwalletMain;
     LOCK2(cs_main, pwalletMain->cs_wallet);
-    cp = CCinit(&C,EVAL_PAYMENTS);
-    return(PaymentsAirdrop(cp,(char *)params[0].get_str().c_str()));
+    CCPaymentsContract_info C;
+    return(PaymentsAirdrop(&C,(char *)params[0].get_str().c_str()));
 }
 
 UniValue payments_airdroptokens(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C;
     if ( fHelp || params.size() != 1 )
         throw runtime_error("payments_airdroptokens \"[%22tokenid%22,lockedblocks,minamount,mintoaddress,top,bottom,fixedFlag,%22excludePubKey%22,...,%22excludePubKeyN%22]\"\n");
     if ( ensure_CCrequirements(EVAL_PAYMENTS) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
     const CKeyStore& keystore = *pwalletMain;
     LOCK2(cs_main, pwalletMain->cs_wallet);
-    cp = CCinit(&C,EVAL_PAYMENTS);
-    return(PaymentsAirdropTokens(cp,(char *)params[0].get_str().c_str()));
+    CCPaymentsContract_info C;
+    return(PaymentsAirdropTokens(&C,(char *)params[0].get_str().c_str()));
 }
 
 UniValue payments_info(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C;
     if ( fHelp || params.size() != 1 )
         throw runtime_error("paymentsinfo \"[%22createtxid%22]\"\n");
     if ( ensure_CCrequirements(EVAL_PAYMENTS) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
     const CKeyStore& keystore = *pwalletMain;
     LOCK2(cs_main, pwalletMain->cs_wallet);
-    cp = CCinit(&C,EVAL_PAYMENTS);
-    return(PaymentsInfo(cp,(char *)params[0].get_str().c_str()));
+    CCPaymentsContract_info C;
+    return(PaymentsInfo(&C,(char *)params[0].get_str().c_str()));
 }
 
 UniValue payments_list(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C;
     if ( fHelp || params.size() != 0 )
         throw runtime_error("paymentslist\n");
     if ( ensure_CCrequirements(EVAL_PAYMENTS) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
     const CKeyStore& keystore = *pwalletMain;
     LOCK2(cs_main, pwalletMain->cs_wallet);
-    cp = CCinit(&C,EVAL_PAYMENTS);
-    return(PaymentsList(cp,(char *)""));
+    CCPaymentsContract_info C;
+    return(PaymentsList(&C,(char *)""));
 }
 
 UniValue oraclesaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-    cp = CCinit(&C,EVAL_ORACLES);
+    std::vector<unsigned char> pubkey;
+    CCOraclesContract_info C;
     if ( fHelp || params.size() > 1 )
         throw runtime_error("oraclesaddress [pubkey]\n");
-    if ( ensure_CCrequirements(cp->evalcode) < 0 )
+    if ( ensure_CCrequirements(C.evalcode) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
     if ( params.size() == 1 )
         pubkey = ParseHex(params[0].get_str().c_str());
-    return(CCaddress(cp,(char *)"Oracles",pubkey));
+    return(CCaddress(&C,(char *)"Oracles",pubkey));
 }
 
 UniValue pricesaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    UniValue result(UniValue::VOBJ); struct CCcontract_info *cp,C,*assetscp,C2; std::vector<unsigned char> pubkey; CPubKey pk,planpk,pricespk; char myaddr[64],houseaddr[64],exposureaddr[64];
-    cp = CCinit(&C,EVAL_PRICES);
-    assetscp = CCinit(&C2,EVAL_PRICES);
+    UniValue result(UniValue::VOBJ); 
+    std::vector<unsigned char> pubkey; 
+    CPubKey pk,planpk,pricespk; char myaddr[64],houseaddr[64],exposureaddr[64];
+
+    CCPricesContract_info C;
     if ( fHelp || params.size() > 1 )
         throw runtime_error("pricesaddress [pubkey]\n");
-    if ( ensure_CCrequirements(cp->evalcode) < 0 )
+    if ( ensure_CCrequirements(C.evalcode) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
     if ( params.size() == 1 )
         pubkey = ParseHex(params[0].get_str().c_str());
-    result = CCaddress(cp,(char *)"Prices",pubkey);
+    result = CCaddress(&C,(char *)"Prices",pubkey);
     if (mypk.IsValid()) pk=mypk;
     else pk = pubkey2pk(Mypubkey());
-    pricespk = GetUnspendable(cp,0);
-    GetCCaddress(assetscp,myaddr,pk);
-    GetCCaddress1of2(assetscp,houseaddr,pricespk,planpk);
-    GetCCaddress1of2(assetscp,exposureaddr,pricespk,pricespk);
+    pricespk = C.GetUnspendable();
+
+    CCPricesContract_info C2;
+    GetCCaddress(&C2,myaddr,pk);
+    GetCCaddress1of2(&C2,houseaddr,pricespk,planpk);
+    GetCCaddress1of2(&C2,exposureaddr,pricespk,pricespk);
     result.push_back(Pair("myaddr",myaddr)); // for holding my asssets
     result.push_back(Pair("houseaddr",houseaddr)); // globally accessible house assets
     result.push_back(Pair("exposureaddr",exposureaddr)); // tracking of exposure
@@ -6060,203 +6074,237 @@ UniValue pricesaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 
 UniValue pegsaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-    cp = CCinit(&C,EVAL_PEGS);
+    std::vector<unsigned char> pubkey;
     if ( fHelp || params.size() > 1 )
         throw runtime_error("pegssaddress [pubkey]\n");
-    if ( ensure_CCrequirements(cp->evalcode) < 0 )
+    CCPegsContract_info C;
+    if ( ensure_CCrequirements(C.evalcode) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
     if ( params.size() == 1 )
         pubkey = ParseHex(params[0].get_str().c_str());
-    return(CCaddress(cp,(char *)"Pegs",pubkey));
+    return(CCaddress(&C,(char *)"Pegs",pubkey));
 }
 
 UniValue marmaraaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-    cp = CCinit(&C,EVAL_MARMARA);
     if ( fHelp || params.size() > 1 )
         throw runtime_error("Marmaraaddress [pubkey]\n");
-    if ( ensure_CCrequirements(cp->evalcode) < 0 )
+    
+    CCMaramaContract_info C;
+    if ( ensure_CCrequirements(C.evalcode) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
+
+    std::vector<unsigned char> pubkey;
     if ( params.size() == 1 )
         pubkey = ParseHex(params[0].get_str().c_str());
-    return(CCaddress(cp,(char *)"Marmara",pubkey));
+    return(CCaddress(&C,(char *)"Marmara",pubkey));
 }
 
 UniValue paymentsaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-    cp = CCinit(&C,EVAL_PAYMENTS);
     if ( fHelp || params.size() > 1 )
         throw runtime_error("paymentsaddress [pubkey]\n");
-    if ( ensure_CCrequirements(cp->evalcode) < 0 )
+
+    CCPaymentsContract_info C;
+    if ( ensure_CCrequirements(C.evalcode) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
+
+    std::vector<unsigned char> pubkey;
     if ( params.size() == 1 )
         pubkey = ParseHex(params[0].get_str().c_str());
-    return(CCaddress(cp,(char *)"Payments",pubkey));
+    return(CCaddress(&C,(char *)"Payments",pubkey));
 }
 
 UniValue gatewaysaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-    cp = CCinit(&C,EVAL_GATEWAYS);
     if ( fHelp || params.size() > 1 )
         throw runtime_error("gatewaysaddress [pubkey]\n");
-    if ( ensure_CCrequirements(cp->evalcode) < 0 )
+
+    CCGatewaysContract_info C;
+    if ( ensure_CCrequirements(C.evalcode) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
+
+    std::vector<unsigned char> pubkey;
     if ( params.size() == 1 )
         pubkey = ParseHex(params[0].get_str().c_str());
-    return(CCaddress(cp,(char *)"Gateways",pubkey));
+
+    return(CCaddress(&C,(char *)"Gateways",pubkey));
 }
 
 UniValue heiraddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-	struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-	cp = CCinit(&C,EVAL_HEIR);
     if ( fHelp || params.size() > 1 )
         throw runtime_error("heiraddress pubkey\n");
-    if ( ensure_CCrequirements(cp->evalcode) < 0 )
+
+    CCHeirContract_info C;
+    if ( ensure_CCrequirements(C.evalcode) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
-    pubkey = ParseHex(params[0].get_str().c_str());
-	return(CCaddress(cp,(char *)"Heir",pubkey));
+
+	std::vector<unsigned char> pubkey = ParseHex(params[0].get_str().c_str());
+
+	return CCaddress(&C,(char *)"Heir",pubkey);
 }
 
 UniValue lottoaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-    cp = CCinit(&C,EVAL_LOTTO);
     if ( fHelp || params.size() > 1 )
         throw runtime_error("lottoaddress [pubkey]\n");
-    if ( ensure_CCrequirements(cp->evalcode) < 0 )
+
+    CCLottoContract_info C;
+    if ( ensure_CCrequirements(C.evalcode) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
+
+    std::vector<unsigned char> pubkey;
     if ( params.size() == 1 )
         pubkey = ParseHex(params[0].get_str().c_str());
-    return(CCaddress(cp,(char *)"Lotto",pubkey));
+
+    return(CCaddress(&C,(char *)"Lotto",pubkey));
 }
 
 UniValue FSMaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-    cp = CCinit(&C,EVAL_FSM);
     if ( fHelp || params.size() > 1 )
         throw runtime_error("FSMaddress [pubkey]\n");
-    if ( ensure_CCrequirements(cp->evalcode) < 0 )
+    
+    CCFSMContract_info C;
+    if ( ensure_CCrequirements(C.evalcode) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
+
+    std::vector<unsigned char> pubkey;
     if ( params.size() == 1 )
         pubkey = ParseHex(params[0].get_str().c_str());
-    return(CCaddress(cp,(char *)"FSM",pubkey));
+
+    return CCaddress(&C,(char *)"FSM",pubkey);
 }
 
 UniValue auctionaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-    cp = CCinit(&C,EVAL_AUCTION);
     if ( fHelp || params.size() > 1 )
         throw runtime_error("auctionaddress [pubkey]\n");
-    if ( ensure_CCrequirements(cp->evalcode) < 0 )
+
+    CCAuctionContract_info C;
+    if ( ensure_CCrequirements(C.evalcode) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
+
+    std::vector<unsigned char> pubkey;
     if ( params.size() == 1 )
         pubkey = ParseHex(params[0].get_str().c_str());
-    return(CCaddress(cp,(char *)"Auction",pubkey));
+
+    return CCaddress(&C,(char *)"Auction",pubkey);
 }
 
 UniValue diceaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-    cp = CCinit(&C,EVAL_DICE);
     if ( fHelp || params.size() > 1 )
         throw runtime_error("diceaddress [pubkey]\n");
-    if ( ensure_CCrequirements(cp->evalcode) < 0 )
+
+    CCDiceContract_info C;
+    if ( ensure_CCrequirements(C.evalcode) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
+
+    std::vector<unsigned char> pubkey;
     if ( params.size() == 1 )
         pubkey = ParseHex(params[0].get_str().c_str());
-    return(CCaddress(cp,(char *)"Dice",pubkey));
+
+    return CCaddress(&C,(char *)"Dice",pubkey);
 }
 
 UniValue faucetaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-    int error;
-    cp = CCinit(&C,EVAL_FAUCET);
     if ( fHelp || params.size() > 1 )
         throw runtime_error("faucetaddress [pubkey]\n");
-    error = ensure_CCrequirements(cp->evalcode);
-    if ( error < 0 )
+    
+    CCFaucetContract_info C;
+    int error = ensure_CCrequirements(C.evalcode);
+    if (error < 0)
         throw runtime_error(strprintf("to use CC contracts, you need to launch daemon with valid -pubkey= for an address in your wallet. ERR=%d\n", error));
+
+    std::vector<unsigned char> pubkey;
     if ( params.size() == 1 )
         pubkey = ParseHex(params[0].get_str().c_str());
-    return(CCaddress(cp,(char *)"Faucet",pubkey));
+    return CCaddress(&C,(char *)"Faucet",pubkey);
 }
 
 UniValue rewardsaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-    cp = CCinit(&C,EVAL_REWARDS);
     if ( fHelp || params.size() > 1 )
         throw runtime_error("rewardsaddress [pubkey]\n");
-    if ( ensure_CCrequirements(cp->evalcode) < 0 )
+
+    CCRewardsContract_info C;
+    if ( ensure_CCrequirements(C.evalcode) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
+
+    std::vector<unsigned char> pubkey;
     if ( params.size() == 1 )
         pubkey = ParseHex(params[0].get_str().c_str());
-    return(CCaddress(cp,(char *)"Rewards",pubkey));
+
+    return CCaddress(&C,(char *)"Rewards",pubkey);
 }
 
 UniValue assetsaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-	struct CCcontract_info *cp, C; std::vector<unsigned char> pubkey;
-	cp = CCinit(&C, EVAL_ASSETS);
 	if (fHelp || params.size() > 1)
 		throw runtime_error("assetsaddress [pubkey]\n");
-	if (ensure_CCrequirements(cp->evalcode) < 0)
+
+    CCAssetContract_info C;
+	if (ensure_CCrequirements(C.evalcode) < 0)
 		throw runtime_error(CC_REQUIREMENTS_MSG);
+
+	std::vector<unsigned char> pubkey;
 	if (params.size() == 1)
 		pubkey = ParseHex(params[0].get_str().c_str());
-	return(CCaddress(cp, (char *)"Assets", pubkey));
+
+	return CCaddress(&C, (char *)"Assets", pubkey);
 }
 
 UniValue tokenaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-    cp = CCinit(&C,EVAL_TOKENS);
     if ( fHelp || params.size() > 1 )
         throw runtime_error("tokenaddress [pubkey]\n");
-    if ( ensure_CCrequirements(cp->evalcode) < 0 )
+
+    CCTokensContract_info C;
+    if ( ensure_CCrequirements(C.evalcode) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
+
+    std::vector<unsigned char> pubkey;
     if ( params.size() == 1 )
         pubkey = ParseHex(params[0].get_str().c_str());
-    return(CCaddress(cp,(char *)"Tokens", pubkey));
+
+    return CCaddress(&C,(char *)"Tokens", pubkey);
 }
 
 UniValue importgatewayaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    struct CCcontract_info *cp,C; std::vector<unsigned char> pubkey;
-    cp = CCinit(&C,EVAL_IMPORTGATEWAY);
     if ( fHelp || params.size() > 1 )
         throw runtime_error("importgatewayddress [pubkey]\n");
-    if ( ensure_CCrequirements(cp->evalcode) < 0 )
+
+    CCImportGatewayContract_info C;
+    if ( ensure_CCrequirements(C.evalcode) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
+
+    std::vector<unsigned char> pubkey;
     if ( params.size() == 1 )
         pubkey = ParseHex(params[0].get_str().c_str());
-    return(CCaddress(cp,(char *)"ImportGateway", pubkey));
+
+    return CCaddress(&C,(char *)"ImportGateway", pubkey);
 }
 
 UniValue marmara_poolpayout(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
     int32_t firstheight; double perc; char *jsonstr;
+
     if ( fHelp || params.size() != 3 )
-    {
-        // marmarapoolpayout 0.5 2 '[["024131032ed90941e714db8e6dd176fe5a86c9d873d279edecf005c06f773da686",1000],["02ebc786cb83de8dc3922ab83c21f3f8a2f3216940c3bf9da43ce39e2a3a882c92",100]]';
-        //marmarapoolpayout 0 2 '[["024131032ed90941e714db8e6dd176fe5a86c9d873d279edecf005c06f773da686",1000]]'
         throw runtime_error("marmarapoolpayout perc firstheight \"[[\\\"pubkey\\\":shares], ...]\"\n");
-    }
+
     if ( ensure_CCrequirements(EVAL_MARMARA) < 0 )
         throw runtime_error(CC_REQUIREMENTS_MSG);
+
     const CKeyStore& keystore = *pwalletMain;
     LOCK2(cs_main, pwalletMain->cs_wallet);
     perc = atof(params[0].get_str().c_str()) / 100.;
     firstheight = atol(params[1].get_str().c_str());
     jsonstr = (char *)params[2].get_str().c_str();
+
     return(MarmaraPoolPayout(0,firstheight,perc,jsonstr)); // [[pk0, shares0], [pk1, shares1], ...]
 }
 
@@ -6451,10 +6499,9 @@ UniValue channelsinfo(const UniValue& params, bool fHelp, const CPubKey& mypk)
 
 UniValue channelsopen(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    UniValue result(UniValue::VOBJ); int32_t numpayments; int64_t payment; std::vector<unsigned char> destpub; struct CCcontract_info *cp,C;
+    UniValue result(UniValue::VOBJ); int32_t numpayments; int64_t payment; std::vector<unsigned char> destpub; 
     uint256 tokenid=zeroid;
 
-    cp = CCinit(&C,EVAL_CHANNELS);
     if ( fHelp || params.size() < 3 || params.size() > 4)
         throw runtime_error("channelsopen destpubkey numpayments payment [tokenid]\n");
     if ( ensure_CCrequirements(EVAL_CHANNELS) < 0 )
@@ -6478,8 +6525,8 @@ UniValue channelsopen(const UniValue& params, bool fHelp, const CPubKey& mypk)
 
 UniValue channelspayment(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    UniValue result(UniValue::VOBJ); struct CCcontract_info *cp,C; uint256 opentxid,secret=zeroid; int32_t n; int64_t amount;
-    cp = CCinit(&C,EVAL_CHANNELS);
+    UniValue result(UniValue::VOBJ); uint256 opentxid,secret=zeroid; int32_t n; int64_t amount;
+
     if ( fHelp || params.size() < 2 ||  params.size() >3 )
         throw runtime_error("channelspayment opentxid amount [secret]\n");
     if ( ensure_CCrequirements(EVAL_CHANNELS) < 0 )
@@ -6502,8 +6549,8 @@ UniValue channelspayment(const UniValue& params, bool fHelp, const CPubKey& mypk
 
 UniValue channelsclose(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    UniValue result(UniValue::VOBJ); struct CCcontract_info *cp,C; uint256 opentxid;
-    cp = CCinit(&C,EVAL_CHANNELS);
+    UniValue result(UniValue::VOBJ); uint256 opentxid;
+
     if ( fHelp || params.size() != 1 )
         throw runtime_error("channelsclose opentxid\n");
     if ( ensure_CCrequirements(EVAL_CHANNELS) < 0 )
@@ -6521,8 +6568,8 @@ UniValue channelsclose(const UniValue& params, bool fHelp, const CPubKey& mypk)
 
 UniValue channelsrefund(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    UniValue result(UniValue::VOBJ); struct CCcontract_info *cp,C; uint256 opentxid,closetxid;
-    cp = CCinit(&C,EVAL_CHANNELS);
+    UniValue result(UniValue::VOBJ); uint256 opentxid,closetxid;
+
     if ( fHelp || params.size() != 2 )
         throw runtime_error("channelsrefund opentxid closetxid\n");
     if ( ensure_CCrequirements(EVAL_CHANNELS) < 0 )
@@ -7219,9 +7266,10 @@ UniValue faucetfund(const UniValue& params, bool fHelp, const CPubKey& mypk)
     funds = atof(params[0].get_str().c_str()) * COIN + 0.00000000499999;
     if ( (0) && KOMODO_NSPV_SUPERLITE )
     {
-        char coinaddr[64]; struct CCcontract_info *cp,C; CTxOut v;
-        cp = CCinit(&C,EVAL_FAUCET);
-        v = MakeCC1vout(EVAL_FAUCET,funds,GetUnspendable(cp,0));
+        char coinaddr[64]; 
+        CTxOut v;
+        CCFaucetContract_info C;
+        v = MakeCC1vout(EVAL_FAUCET,funds,C.GetUnspendable());
         Getscriptaddress(coinaddr,CScript() << ParseHex(HexStr(pubkey2pk(Mypubkey()))) << OP_CHECKSIG);
         return(NSPV_spend(coinaddr,(char *)HexStr(v.scriptPubKey.begin()+1,v.scriptPubKey.end()-1).c_str(),funds));
     }
@@ -7610,7 +7658,7 @@ UniValue mytokenorders(const UniValue& params, bool fHelp, const CPubKey& mypk)
 
 UniValue tokenbalance(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    UniValue result(UniValue::VOBJ); uint256 tokenid; uint64_t balance; std::vector<unsigned char> pubkey; struct CCcontract_info *cp,C;
+    UniValue result(UniValue::VOBJ); uint256 tokenid; uint64_t balance; std::vector<unsigned char> pubkey;
 	CCerror.clear();
 
     if ( fHelp || params.size() > 2 )
@@ -7632,8 +7680,8 @@ UniValue tokenbalance(const UniValue& params, bool fHelp, const CPubKey& mypk)
 		char destaddr[64];
 
 		result.push_back(Pair("result", "success"));
-        cp = CCinit(&C,EVAL_TOKENS);
-		if (GetCCaddress(cp, destaddr, pubkey2pk(pubkey)) != 0)
+        CCTokensContract_info C;
+		if (GetCCaddress(&C, destaddr, pubkey2pk(pubkey)) != 0)
 			result.push_back(Pair("CCaddress", destaddr));
 
 		result.push_back(Pair("tokenid", params[0].get_str()));

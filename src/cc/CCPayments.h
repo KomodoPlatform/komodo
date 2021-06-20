@@ -12,10 +12,7 @@
  * Removal or modification of this copyright notice is prohibited.            *
  *                                                                            *
  ******************************************************************************/
-
-
-#ifndef CC_PAYMENTS_H
-#define CC_PAYMENTS_H
+#pragma once
 
 #include "CCinclude.h"
 #include <gmp.h>
@@ -25,8 +22,6 @@
 #define PAYMENTS_MERGEOFSET 60 // 1H extra. 
 extern std::vector <std::pair<CAmount, CTxDestination>> vAddressSnapshot;
 extern int32_t lastSnapShotHeight;
-
-bool PaymentsValidate(struct CCcontract_info *cp,Eval* eval,const CTransaction &tx, uint32_t nIn);
 
 // CCcustom
 UniValue PaymentsRelease(struct CCcontract_info *cp,char *jsonstr);
@@ -39,5 +34,18 @@ UniValue PaymentsAirdropTokens(struct CCcontract_info *cp,char *jsonstr);
 UniValue PaymentsInfo(struct CCcontract_info *cp,char *jsonstr);
 UniValue PaymentsList(struct CCcontract_info *cp,char *jsonstr);
 
-#endif
- 
+struct CCPaymentsContract_info : public CCcontract_info
+{
+    CCPaymentsContract_info() : CCcontract_info()
+    {
+        evalcode = EVAL_PAYMENTS;
+        strcpy(unspendableCCaddr, "REpyKi7avsVduqZ3eimncK4uKqSArLTGGK");
+        strcpy(normaladdr, "RHRX8RTMAh2STWe9DHqsvJbzS7ty6aZy3d");
+        strcpy(CChexstr, "0358f1764f82c63abc7c7455555fd1d3184905e30e819e97667e247e5792b46856");
+        uint8_t PaymentsCCpriv[32] = { 0x03, 0xc9, 0x73, 0xc2, 0xb8, 0x30, 0x3d, 0xbd, 0xc8, 
+                0xd9, 0xbf, 0x02, 0x49, 0xd9, 0x65, 0x61, 0x45, 0xed, 0x9e, 0x93, 0x51, 0xab, 
+                0x8b, 0x2e, 0xe7, 0xc7, 0x40, 0xf1, 0xc4, 0xd2, 0xc0, 0x5b };
+        memcpy(CCpriv, PaymentsCCpriv, 32); 
+    }
+    virtual bool validate(Eval* eval, const CTransaction &tx, uint32_t nIn) override;
+};

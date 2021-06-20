@@ -47,9 +47,8 @@ public:
      return CTxOut(amount, CScript() << ParseHex(HexStr(myPubkey)) << OP_CHECKSIG);
      } */
     static bool GetCoinsOrTokensCCaddress1of2(char *coinaddr, CPubKey ownerPubkey, CPubKey heirPubkey) {
-        struct CCcontract_info *cpHeir, heirC;
-        cpHeir = CCinit(&heirC, EVAL_HEIR);
-        return GetCCaddress1of2(cpHeir, coinaddr, ownerPubkey, heirPubkey);
+        CCHeirContract_info C;
+        return GetCCaddress1of2(&C, coinaddr, ownerPubkey, heirPubkey);
     }
     static void CCaddrCoinsOrTokens1of2set(struct CCcontract_info *cp, CPubKey ownerPubkey, CPubKey heirPubkey, char *coinaddr)
     {
@@ -65,9 +64,8 @@ class TokenHelper {
 public:
     static uint8_t getMyEval() { return EVAL_TOKENS; }
     static int64_t addOwnerInputs(uint256 tokenid, CMutableTransaction& mtx, CPubKey ownerPubkey, int64_t total, int32_t maxinputs) {
-        struct CCcontract_info *cpHeir, heirC;
-        cpHeir = CCinit(&heirC, EVAL_TOKENS);
-        return AddTokenCCInputs(cpHeir, mtx, ownerPubkey, tokenid, total, maxinputs);
+        CCTokensContract_info heirC;
+        return AddTokenCCInputs(&heirC, mtx, ownerPubkey, tokenid, total, maxinputs);
     }
     
     static CScript makeCreateOpRet(uint256 tokenid, std::vector<CPubKey> voutTokenPubkeys, CPubKey ownerPubkey, CPubKey heirPubkey, int64_t inactivityTimeSec, std::string heirName, std::string memo) {
@@ -93,9 +91,8 @@ public:
      return MakeCC1vout(EVAL_TOKENS, amount, myPubkey); // yes EVAL_TOKENS
      } */
     static bool GetCoinsOrTokensCCaddress1of2(char *coinaddr, CPubKey ownerPubkey, CPubKey heirPubkey) {
-        struct CCcontract_info *cpHeir, heirC;
-        cpHeir = CCinit(&heirC, EVAL_HEIR);
-        return GetTokensCCaddress1of2(cpHeir, coinaddr, ownerPubkey, heirPubkey);
+        CCHeirContract_info heirC;
+        return GetTokensCCaddress1of2(&heirC, coinaddr, ownerPubkey, heirPubkey);
     }
     
     static void CCaddrCoinsOrTokens1of2set(struct CCcontract_info *cp, CPubKey ownerPubkey, CPubKey heirPubkey, char *coinaddr) {

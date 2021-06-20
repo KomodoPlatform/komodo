@@ -302,14 +302,13 @@ UniValue migrate_createburntransaction(const UniValue& params, bool fHelp, const
         throw JSONRPCError(RPC_TYPE_ERROR, "There is no tokens support on LABS.");
 
     CPubKey myPubKey = Mypubkey();
-    struct CCcontract_info *cpTokens, C;
-    cpTokens = CCinit(&C, EVAL_TOKENS);
 
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
 
     const std::string chainSymbol(ASSETCHAINS_SYMBOL);
     std::vector<uint8_t> rawproof; //(chainSymbol.begin(), chainSymbol.end());
 
+    CCTokensContract_info tokensC;
     if (tokenid.IsNull()) {        // coins
         int64_t inputs;
         if ((inputs = AddNormalinputs(mtx, myPubKey, burnAmount + txfee, 10)) == 0) {
@@ -379,11 +378,11 @@ UniValue migrate_createburntransaction(const UniValue& params, bool fHelp, const
             throw runtime_error("No normal input found for two txfee\n");
       
         int64_t ccInputs;
-        if ((ccInputs = AddTokenCCInputs(cpTokens, mtx, myPubKey, tokenid, burnAmount, 4)) < burnAmount)
+        if ((ccInputs = AddTokenCCInputs(&tokensC, mtx, myPubKey, tokenid, burnAmount, 4)) < burnAmount)
             throw runtime_error("No token inputs found (please try to consolidate tokens)\n"); 
 
         // make payouts  (which will be in the import tx with token):
-        mtx.vout.push_back(MakeCC1vout(EVAL_TOKENS, txfee, GetUnspendable(cpTokens, NULL)));  // new marker to token cc addr, burnable and validated, vout position now changed to 0 (from 1)
+        mtx.vout.push_back(MakeCC1vout(EVAL_TOKENS, txfee, tokensC.GetUnspendable()));  // new marker to token cc addr, burnable and validated, vout position now changed to 0 (from 1)
         mtx.vout.push_back(MakeTokensCC1vout(destEvalCode, burnAmount, destPubKey));
 
         std::vector<std::pair<uint8_t, vscript_t>> voprets;
@@ -416,7 +415,7 @@ UniValue migrate_createburntransaction(const UniValue& params, bool fHelp, const
         mtx.vout.push_back(CTxOut(txfee, EncodeTokenOpRet(tokenid, voutTokenPubkeys, std::make_pair(OPRETID_BURNDATA, vopretBurnData))));  //burn txfee for miners in dest chain
     }
 
-    std::string burnTxHex = FinalizeCCTx(0, cpTokens, mtx, myPubKey, txfee, CScript()); //no change, no opret
+    std::string burnTxHex = FinalizeCCTx(0, &tokensC, mtx, myPubKey, txfee, CScript()); //no change, no opret
     ret.push_back(Pair("BurnTxHex", burnTxHex));
     return ret;
 }
@@ -485,10 +484,9 @@ void CheckBurnTxSource(uint256 burntxid, UniValue &info) {
                 throw std::runtime_error("Incorrect tokenbase tx: not opreturn");
 
 
-            struct CCcontract_info *cpTokens, CCtokens_info;
-            cpTokens = CCinit(&CCtokens_info, EVAL_TOKENS);
+            CCTokensContract_info tokensC;
             int64_t ccInputs = 0, ccOutputs = 0;
-            if( !TokensExactAmounts(true, cpTokens, ccInputs, ccOutputs, NULL, burnTx, tokenid) )
+            if( !TokensExactAmounts(true, &tokensC, ccInputs, ccOutputs, NULL, burnTx, tokenid) )
                 throw std::runtime_error("Incorrect token burn tx: cc inputs <> cc outputs");
         }
         else if (vopret.begin()[0] == EVAL_IMPORTCOIN) {
@@ -690,8 +688,6 @@ UniValue migrate_createnotaryapprovaltransaction(const UniValue& params, bool fH
         throw runtime_error("No burntxid in txoutproof");
 
     const int64_t txfee = 10000;
-    struct CCcontract_info *cpDummy, C;
-    cpDummy = CCinit(&C, EVAL_TOKENS);  // just for FinalizeCCtx to work 
 
     // creating a tx with proof:
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
@@ -699,7 +695,8 @@ UniValue migrate_createnotaryapprovaltransaction(const UniValue& params, bool fH
         throw runtime_error("Cannot find normal inputs\n");
     
     mtx.vout.push_back(CTxOut(txfee, CScript() << ParseHex(HexStr(Mypubkey())) << OP_CHECKSIG));
-    std::string notaryTxHex = FinalizeCCTx(0, cpDummy, mtx, Mypubkey(), txfee, CScript() << OP_RETURN << E_MARSHAL(ss << proofData;));
+    CCTokensContract_info tokensC;
+    std::string notaryTxHex = FinalizeCCTx(0, &tokensC, mtx, Mypubkey(), txfee, CScript() << OP_RETURN << E_MARSHAL(ss << proofData;));
 
     UniValue result(UniValue::VOBJ);
     result.push_back(Pair("NotaryTxHex", notaryTxHex));

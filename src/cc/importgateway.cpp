@@ -16,6 +16,8 @@
 #include "CCImportGateway.h"
 #include "key_io.h"
 #include "../importcoin.h"
+#include "CCGateways.h"
+#include "CCtokens.h"
 
 // start of consensus code
 
@@ -292,7 +294,7 @@ int32_t ImportGatewayBindExists(struct CCcontract_info *cp,CPubKey importgateway
     return(0);
 }
 
-bool ImportGatewayValidate(struct CCcontract_info *cp,Eval *eval,const CTransaction &tx, uint32_t nIn)
+bool CCImportGatewayContract_info::validate(Eval *eval,const CTransaction &tx, uint32_t nIn)
 {
     int32_t numvins,numvouts,preventCCvins,preventCCvouts,i,numblocks,height,claimvout; bool retval; uint8_t funcid,hash[32],K,M,N,taddr,prefix,prefix2,wiftype;
     char str[65],destaddr[65],burnaddr[65],importgatewayaddr[65],validationError[512];
@@ -315,8 +317,8 @@ bool ImportGatewayValidate(struct CCcontract_info *cp,Eval *eval,const CTransact
         // }
         // else
         // {  
-            importgatewaypk = GetUnspendable(cp,0);      
-            GetCCaddress(cp, importgatewayaddr, importgatewaypk);              
+            importgatewaypk = GetUnspendable();      
+            GetCCaddress(this, importgatewayaddr, importgatewaypk);              
             if ( (funcid = DecodeImportGatewayOpRet(tx.vout[numvouts-1].scriptPubKey)) != 0)
             {
                 switch ( funcid )
@@ -353,7 +355,7 @@ bool ImportGatewayValidate(struct CCcontract_info *cp,Eval *eval,const CTransact
                             return eval->Invalid("vin.0 is normal for gatewaysWithdraw!");
                         else if ( IsCCInput(tmptx.vin[1].scriptSig) == 0 )
                             return eval->Invalid("vin.1 is CC for gatewaysWithdraw!");
-                        else if ( ConstrainVout(tmptx.vout[0],1,cp->unspendableCCaddr,CC_MARKER_VALUE)==0)
+                        else if ( ConstrainVout(tmptx.vout[0],1,unspendableCCaddr,CC_MARKER_VALUE)==0)
                             return eval->Invalid("invalid marker vout for gatewaysWithdraw!");
                         else if ( ConstrainVout(tmptx.vout[1],1,importgatewayaddr,amount)==0)
                             return eval->Invalid("invalid tokens to gateways vout for gatewaysWithdraw!");
@@ -371,9 +373,9 @@ bool ImportGatewayValidate(struct CCcontract_info *cp,Eval *eval,const CTransact
                             return eval->Invalid("gatewaysbind tx is not yet confirmed(notarised)!");
                         else if (IsCCInput(tx.vin[0].scriptSig) != 0)
                             return eval->Invalid("vin.0 is normal for gatewayspartialsign!");
-                        else if ((*cp->ismyvin)(tx.vin[1].scriptSig) == 0 || myGetTransaction(tx.vin[1].prevout.hash,tmptx,hashblock)==0 || tmptx.vout[tx.vin[1].prevout.n].nValue!=CC_MARKER_VALUE)
+                        else if (ismyvin(tx.vin[1].scriptSig) == 0 || myGetTransaction(tx.vin[1].prevout.hash,tmptx,hashblock)==0 || tmptx.vout[tx.vin[1].prevout.n].nValue!=CC_MARKER_VALUE)
                             return eval->Invalid("vin.1 is CC marker for gatewayspartialsign or invalid marker amount!");
-                        else if (ConstrainVout(tx.vout[0],1,cp->unspendableCCaddr,CC_MARKER_VALUE) == 0 )
+                        else if (ConstrainVout(tx.vout[0],1,unspendableCCaddr,CC_MARKER_VALUE) == 0 )
                             return eval->Invalid("vout.0 invalid marker for gatewayspartialsign!");
                         else if (K>M)
                             return eval->Invalid("invalid number of signs!"); 
@@ -395,7 +397,7 @@ bool ImportGatewayValidate(struct CCcontract_info *cp,Eval *eval,const CTransact
                             return eval->Invalid("vin.0 is normal for gatewaysWithdraw!");
                         else if ( IsCCInput(tmptx.vin[1].scriptSig) == 0 )
                             return eval->Invalid("vin.1 is CC for gatewaysWithdraw!");
-                        else if ( ConstrainVout(tmptx.vout[0],1,cp->unspendableCCaddr,CC_MARKER_VALUE)==0)
+                        else if ( ConstrainVout(tmptx.vout[0],1,unspendableCCaddr,CC_MARKER_VALUE)==0)
                             return eval->Invalid("invalid marker vout for gatewaysWithdraw!");
                         else if ( ConstrainVout(tmptx.vout[1],1,importgatewayaddr,amount)==0)
                             return eval->Invalid("invalid tokens to gateways vout for gatewaysWithdraw!");
@@ -413,9 +415,9 @@ bool ImportGatewayValidate(struct CCcontract_info *cp,Eval *eval,const CTransact
                             return eval->Invalid("gatewaysbind tx is not yet confirmed(notarised)!");
                         else if (IsCCInput(tx.vin[0].scriptSig) != 0)
                             return eval->Invalid("vin.0 is normal for gatewayscompletesigning!");
-                        else if ((*cp->ismyvin)(tx.vin[1].scriptSig) == 0 || myGetTransaction(tx.vin[1].prevout.hash,tmptx,hashblock)==0 || tmptx.vout[tx.vin[1].prevout.n].nValue!=CC_MARKER_VALUE)
+                        else if (ismyvin(tx.vin[1].scriptSig) == 0 || myGetTransaction(tx.vin[1].prevout.hash,tmptx,hashblock)==0 || tmptx.vout[tx.vin[1].prevout.n].nValue!=CC_MARKER_VALUE)
                             return eval->Invalid("vin.1 is CC marker for gatewayscompletesigning or invalid marker amount!");
-                        else if (ConstrainVout(tx.vout[0],1,cp->unspendableCCaddr,CC_MARKER_VALUE) == 0 )
+                        else if (ConstrainVout(tx.vout[0],1,unspendableCCaddr,CC_MARKER_VALUE) == 0 )
                             return eval->Invalid("vout.0 invalid marker for gatewayscompletesigning!");
                         else if (K<M)
                             return eval->Invalid("invalid number of signs!");
@@ -450,7 +452,7 @@ bool ImportGatewayValidate(struct CCcontract_info *cp,Eval *eval,const CTransact
                             return eval->Invalid("gatewaysbind tx is not yet confirmed(notarised)!");
                         else if ( IsCCInput(tx.vin[0].scriptSig) != 0 )
                             return eval->Invalid("vin.0 is normal for gatewaysmarkdone!");
-                        else if ((*cp->ismyvin)(tx.vin[1].scriptSig) == 0 || myGetTransaction(tx.vin[1].prevout.hash,tmptx,hashblock)==0 || tmptx.vout[tx.vin[1].prevout.n].nValue!=CC_MARKER_VALUE)
+                        else if (ismyvin(tx.vin[1].scriptSig) == 0 || myGetTransaction(tx.vin[1].prevout.hash,tmptx,hashblock)==0 || tmptx.vout[tx.vin[1].prevout.n].nValue!=CC_MARKER_VALUE)
                             return eval->Invalid("vin.1 is CC marker for gatewaysmarkdone or invalid marker amount!");
                         else if (K<M)
                             return eval->Invalid("invalid number of signs!");
@@ -473,11 +475,10 @@ std::string ImportGatewayBind(uint64_t txfee,std::string coin,uint256 oracletxid
 {
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
     CTransaction oracletx; uint8_t taddr,prefix,prefix2,wiftype; CPubKey mypk,importgatewaypk; CScript opret; uint256 hashBlock;
-    struct CCcontract_info *cp,*cpTokens,C,CTokens; std::string name,description,format; int32_t i,numvouts;
+    std::string name,description,format; int32_t i,numvouts;
     char destaddr[64],coinaddr[64],myTokenCCaddr[64],str[65],*fstr;
 
-    cp = CCinit(&C,EVAL_IMPORTGATEWAY);
-    cpTokens = CCinit(&CTokens,EVAL_TOKENS);
+    CCGatewaysContract_info C;
     if (coin=="KMD")
     {
         prefix = KMD_PUBTYPE;
@@ -519,7 +520,7 @@ std::string ImportGatewayBind(uint64_t txfee,std::string coin,uint256 oracletxid
         txfee = 10000;
     mypk = pubkey2pk(Mypubkey());
     _GetCCaddress(myTokenCCaddr,EVAL_TOKENS,mypk);
-    importgatewaypk = GetUnspendable(cp,0);
+    importgatewaypk = C.GetUnspendable();
     if ( _GetCCaddress(destaddr,EVAL_IMPORTGATEWAY,importgatewaypk) == 0 )
     {
         CCerror = strprintf("ImportGateway bind.%s can't create globaladdr",coin.c_str());
@@ -544,7 +545,7 @@ std::string ImportGatewayBind(uint64_t txfee,std::string coin,uint256 oracletxid
         LOGSTREAM("importgateway",CCLOG_INFO, stream << CCerror << std::endl);
         return("");
     }
-    if ( ImportGatewayBindExists(cp,importgatewaypk,coin) != 0 )
+    if ( ImportGatewayBindExists(&C,importgatewaypk,coin) != 0 )
     {
         CCerror = strprintf("Gateway bind.%s already exists",coin.c_str());
         LOGSTREAM("importgateway",CCLOG_INFO, stream << CCerror << std::endl);
@@ -552,8 +553,8 @@ std::string ImportGatewayBind(uint64_t txfee,std::string coin,uint256 oracletxid
     }
     if ( AddNormalinputs(mtx,mypk,txfee+CC_MARKER_VALUE,2) > 0 )
     {
-        mtx.vout.push_back(MakeCC1vout(cp->evalcode,CC_MARKER_VALUE,importgatewaypk));
-        return(FinalizeCCTx(0,cp,mtx,mypk,txfee,EncodeImportGatewayBindOpRet('B',coin,oracletxid,M,N,pubkeys,taddr,prefix,prefix2,wiftype)));
+        mtx.vout.push_back(MakeCC1vout(C.evalcode,CC_MARKER_VALUE,importgatewaypk));
+        return(FinalizeCCTx(0,&C,mtx,mypk,txfee,EncodeImportGatewayBindOpRet('B',coin,oracletxid,M,N,pubkeys,taddr,prefix,prefix2,wiftype)));
     }
     CCerror = strprintf("cant find enough inputs");
     LOGSTREAM("importgateway",CCLOG_INFO, stream << CCerror << std::endl);
@@ -564,7 +565,7 @@ std::string ImportGatewayDeposit(uint64_t txfee,uint256 bindtxid,int32_t height,
 {
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight()), burntx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
     CTransaction bindtx; CPubKey mypk; uint256 oracletxid,merkleroot,mhash,hashBlock,txid; std::vector<CTxOut> vouts;
-    int32_t i,m,n,numvouts; uint8_t M,N,taddr,prefix,prefix2,wiftype; std::string coin; struct CCcontract_info *cp,C;
+    int32_t i,m,n,numvouts; uint8_t M,N,taddr,prefix,prefix2,wiftype; std::string coin; 
     std::vector<CPubKey> pubkeys,publishers; std::vector<uint256> txids; char str[128],burnaddr[64];
 
     if (KOMODO_EARLYTXID!=zeroid && bindtxid!=KOMODO_EARLYTXID)
@@ -573,7 +574,6 @@ std::string ImportGatewayDeposit(uint64_t txfee,uint256 bindtxid,int32_t height,
         LOGSTREAM("importgateway",CCLOG_INFO, stream << CCerror << std::endl);
         return("");
     }
-    cp = CCinit(&C,EVAL_IMPORTGATEWAY);
     if ( txfee == 0 )
         txfee = 10000;
     mypk = pubkey2pk(Mypubkey());
@@ -643,7 +643,7 @@ std::string ImportGatewayWithdraw(uint64_t txfee,uint256 bindtxid,std::string re
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
     CTransaction tx; CPubKey mypk,importgatewaypk,signerpk; uint256 txid,hashBlock,oracletxid,tmptokenid,tmpbindtxid,withdrawtxid; int32_t vout,numvouts;
     int64_t nValue,inputs,CCchange=0,tmpamount; uint8_t funcid,K,M,N,taddr,prefix,prefix2,wiftype; std::string coin,hex;
-    std::vector<CPubKey> msigpubkeys; char burnaddr[64],str[65],coinaddr[64]; struct CCcontract_info *cp,C;
+    std::vector<CPubKey> msigpubkeys; char burnaddr[64],str[65],coinaddr[64];
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs;
 
     if (KOMODO_EARLYTXID!=zeroid && bindtxid!=KOMODO_EARLYTXID)
@@ -652,11 +652,11 @@ std::string ImportGatewayWithdraw(uint64_t txfee,uint256 bindtxid,std::string re
         LOGSTREAM("importgateway",CCLOG_INFO, stream << CCerror << std::endl);
         return("");
     }
-    cp = CCinit(&C,EVAL_IMPORTGATEWAY);
     if ( txfee == 0 )
         txfee = 10000;
     mypk = pubkey2pk(Mypubkey());
-    importgatewaypk = GetUnspendable(cp, 0);
+    CCImportGatewayContract_info C;
+    importgatewaypk = C.GetUnspendable();
 
     if( myGetTransaction(bindtxid,tx,hashBlock) == 0 || (numvouts= tx.vout.size()) <= 0 )
     {
@@ -709,7 +709,7 @@ std::string ImportGatewayWithdraw(uint64_t txfee,uint256 bindtxid,std::string re
     {
         mtx.vout.push_back(MakeCC1vout(EVAL_IMPORTGATEWAY,CC_MARKER_VALUE,importgatewaypk));
         mtx.vout.push_back(MakeCC1vout(EVAL_IMPORTGATEWAY,amount,CCtxidaddr(str,bindtxid)));                   
-        return(FinalizeCCTx(0, cp, mtx, mypk, txfee,EncodeImportGatewayWithdrawOpRet('W',bindtxid,refcoin,withdrawpub,amount)));
+        return(FinalizeCCTx(0, &C, mtx, mypk, txfee,EncodeImportGatewayWithdrawOpRet('W',bindtxid,refcoin,withdrawpub,amount)));
     }
     CCerror = strprintf("cant find enough normal inputs");
     LOGSTREAM("importgateway",CCLOG_INFO, stream << CCerror << std::endl);
@@ -719,16 +719,17 @@ std::string ImportGatewayWithdraw(uint64_t txfee,uint256 bindtxid,std::string re
 std::string ImportGatewayPartialSign(uint64_t txfee,uint256 lasttxid,std::string refcoin, std::string hex)
 {
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
-    CPubKey mypk,withdrawpub,signerpk,importgatewaypk; struct CCcontract_info *cp,C; CTransaction tx,tmptx;
+    CPubKey mypk,withdrawpub,signerpk,importgatewaypk; 
+    CTransaction tx,tmptx;
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs; char funcid,str[65],burnaddr[64];
     int32_t numvouts; uint256 withdrawtxid,hashBlock,bindtxid,tokenid,oracletxid; std::string coin,tmphex; int64_t amount;
     uint8_t K=0,M,N,taddr,prefix,prefix2,wiftype; std::vector<CPubKey> pubkeys;
 
-    cp = CCinit(&C,EVAL_IMPORTGATEWAY);
+    CCImportGatewayContract_info C;
     if ( txfee == 0 )
         txfee = 10000;
     mypk = pubkey2pk(Mypubkey());
-    importgatewaypk = GetUnspendable(cp,0);
+    importgatewaypk = C.GetUnspendable();
     if (myGetTransaction(lasttxid,tx,hashBlock)==0 || (numvouts= tx.vout.size())<=0
         || (funcid=DecodeImportGatewayOpRet(tx.vout[numvouts-1].scriptPubKey))==0 || (funcid!='W' && funcid!='P'))
     {
@@ -822,7 +823,7 @@ std::string ImportGatewayPartialSign(uint64_t txfee,uint256 lasttxid,std::string
     {
         mtx.vin.push_back(CTxIn(tx.GetHash(),0,CScript()));
         mtx.vout.push_back(MakeCC1vout(EVAL_IMPORTGATEWAY,CC_MARKER_VALUE,importgatewaypk));       
-        return(FinalizeCCTx(0,cp,mtx,mypk,txfee,EncodeImportGatewayPartialOpRet('P',withdrawtxid,refcoin,K+1,mypk,hex)));
+        return(FinalizeCCTx(0,&C,mtx,mypk,txfee,EncodeImportGatewayPartialOpRet('P',withdrawtxid,refcoin,K+1,mypk,hex)));
     }
     CCerror = strprintf("error adding funds for partialsign");    
     LOGSTREAM("importgateway",CCLOG_INFO, stream << CCerror << std::endl);
@@ -832,13 +833,14 @@ std::string ImportGatewayPartialSign(uint64_t txfee,uint256 lasttxid,std::string
 std::string ImportGatewayCompleteSigning(uint64_t txfee,uint256 lasttxid,std::string refcoin,std::string hex)
 {
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
-    CPubKey mypk,importgatewaypk,signerpk,withdrawpub; struct CCcontract_info *cp,C; char funcid,str[65],burnaddr[64]; int64_t amount;
+    CPubKey mypk,importgatewaypk,signerpk,withdrawpub; 
+    char funcid,str[65],burnaddr[64]; int64_t amount;
     std::string coin,tmphex; CTransaction tx,tmptx; uint256 withdrawtxid,hashBlock,tokenid,bindtxid,oracletxid; int32_t numvouts;
     uint8_t K=0,M,N,taddr,prefix,prefix2,wiftype; std::vector<CPubKey> pubkeys;
 
-    cp = CCinit(&C,EVAL_IMPORTGATEWAY);
     mypk = pubkey2pk(Mypubkey());
-    importgatewaypk = GetUnspendable(cp,0);
+    CCImportGatewayContract_info C;
+    importgatewaypk = C.GetUnspendable();
     if ( txfee == 0 )
         txfee = 10000;
     if (myGetTransaction(lasttxid,tx,hashBlock)==0 || (numvouts= tx.vout.size())<=0
@@ -939,7 +941,7 @@ std::string ImportGatewayCompleteSigning(uint64_t txfee,uint256 lasttxid,std::st
     {
         mtx.vin.push_back(CTxIn(lasttxid,0,CScript()));
         mtx.vout.push_back(MakeCC1vout(EVAL_IMPORTGATEWAY,CC_MARKER_VALUE,importgatewaypk));       
-        return(FinalizeCCTx(0,cp,mtx,mypk,txfee,EncodeImportGatewayCompleteSigningOpRet('S',withdrawtxid,refcoin,K+1,hex)));
+        return(FinalizeCCTx(0,&C,mtx,mypk,txfee,EncodeImportGatewayCompleteSigningOpRet('S',withdrawtxid,refcoin,K+1,hex)));
     }
     CCerror = strprintf("error adding funds for completesigning");
     LOGSTREAM("importgateway",CCLOG_INFO, stream << CCerror << std::endl);
@@ -949,11 +951,11 @@ std::string ImportGatewayCompleteSigning(uint64_t txfee,uint256 lasttxid,std::st
 std::string ImportGatewayMarkDone(uint64_t txfee,uint256 completetxid,std::string refcoin)
 {
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
-    CPubKey mypk; struct CCcontract_info *cp,C; char str[65],burnaddr[64]; CTransaction tx; int32_t numvouts;
+    CPubKey mypk; 
+    char str[65],burnaddr[64]; CTransaction tx; int32_t numvouts;
     uint256 withdrawtxid,bindtxid,oracletxid,tokenid,hashBlock; std::string coin,hex;
     uint8_t K,M,N,taddr,prefix,prefix2,wiftype; std::vector<CPubKey> pubkeys; int64_t amount; CPubKey withdrawpub;
 
-    cp = CCinit(&C,EVAL_IMPORTGATEWAY);
     mypk = pubkey2pk(Mypubkey());    
     if ( txfee == 0 )
         txfee = 10000;
@@ -1010,7 +1012,8 @@ std::string ImportGatewayMarkDone(uint64_t txfee,uint256 completetxid,std::strin
     {
         mtx.vin.push_back(CTxIn(completetxid,0,CScript()));
         mtx.vout.push_back(CTxOut(CC_MARKER_VALUE,CScript() << ParseHex(HexStr(mypk)) << OP_CHECKSIG));        
-        return(FinalizeCCTx(0,cp,mtx,mypk,txfee,EncodeImportGatewayMarkDoneOpRet('M',withdrawtxid,refcoin,completetxid)));
+        CCImportGatewayContract_info C; 
+        return(FinalizeCCTx(0,&C,mtx,mypk,txfee,EncodeImportGatewayMarkDoneOpRet('M',withdrawtxid,refcoin,completetxid)));
     }
     CCerror = strprintf("error adding funds for markdone");
     LOGSTREAM("importgateway",CCLOG_INFO, stream << CCerror << std::endl);
@@ -1019,15 +1022,17 @@ std::string ImportGatewayMarkDone(uint64_t txfee,uint256 completetxid,std::strin
 
 UniValue ImportGatewayPendingWithdraws(uint256 bindtxid,std::string refcoin)
 {
-    UniValue result(UniValue::VOBJ),pending(UniValue::VARR); CTransaction tx; std::string coin,hex; CPubKey mypk,importgatewaypk,withdrawpub,signerpk;
-    std::vector<CPubKey> msigpubkeys; uint256 hashBlock,txid,tmpbindtxid,tmptokenid,oracletxid,withdrawtxid; uint8_t K,M,N,taddr,prefix,prefix2,wiftype;
+    UniValue result(UniValue::VOBJ),pending(UniValue::VARR); CTransaction tx; std::string coin,hex; 
+    CPubKey mypk,importgatewaypk,withdrawpub,signerpk;
+    std::vector<CPubKey> msigpubkeys; uint256 hashBlock,txid,tmpbindtxid,tmptokenid,oracletxid,withdrawtxid; 
+    uint8_t K,M,N,taddr,prefix,prefix2,wiftype;
     char funcid,burnaddr[65],coinaddr[65],destaddr[65],str[65],withaddr[65],numstr[32],signeraddr[65],txidaddr[65];
-    int32_t i,n,numvouts,vout,queueflag; int64_t amount,nValue; struct CCcontract_info *cp,C;
+    int32_t i,n,numvouts,vout,queueflag; int64_t amount,nValue;
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs;
 
-    cp = CCinit(&C,EVAL_IMPORTGATEWAY);
     mypk = pubkey2pk(Mypubkey());
-    importgatewaypk = GetUnspendable(cp,0);
+    CCImportGatewayContract_info C;
+    importgatewaypk = C.GetUnspendable();
     _GetCCaddress(coinaddr,EVAL_IMPORTGATEWAY,importgatewaypk);
     if ( myGetTransaction(bindtxid,tx,hashBlock) == 0 || (numvouts= tx.vout.size()) <= 0 )
     {
@@ -1110,12 +1115,12 @@ UniValue ImportGatewayProcessedWithdraws(uint256 bindtxid,std::string refcoin)
     CPubKey mypk,importgatewaypk,withdrawpub; std::vector<CPubKey> msigpubkeys;
     uint256 withdrawtxid,hashBlock,txid,tmptokenid,oracletxid; uint8_t K,M,N,taddr,prefix,prefix2,wiftype;
     char burnaddr[65],coinaddr[65],str[65],numstr[32],withaddr[65],txidaddr[65];
-    int32_t i,n,numvouts,vout,queueflag; int64_t nValue,amount; struct CCcontract_info *cp,C;
+    int32_t i,n,numvouts,vout,queueflag; int64_t nValue,amount;
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs;
 
-    cp = CCinit(&C,EVAL_IMPORTGATEWAY);
     mypk = pubkey2pk(Mypubkey());
-    importgatewaypk = GetUnspendable(cp,0);
+    CCImportGatewayContract_info C;
+    importgatewaypk = C.GetUnspendable();
     _GetCCaddress(coinaddr,EVAL_IMPORTGATEWAY,importgatewaypk);
     if ( myGetTransaction(bindtxid,tx,hashBlock) == 0 || (numvouts= tx.vout.size()) <= 0 )
     {        
@@ -1173,10 +1178,11 @@ UniValue ImportGatewayProcessedWithdraws(uint256 bindtxid,std::string refcoin)
 UniValue ImportGatewayList()
 {
     UniValue result(UniValue::VARR); std::vector<uint256> txids;
-    struct CCcontract_info *cp,C; uint256 txid,hashBlock,oracletxid; CTransaction vintx; std::string coin;
+    uint256 txid,hashBlock,oracletxid; CTransaction vintx; std::string coin;
     char str[65],burnaddr[64]; uint8_t M,N,taddr,prefix,prefix2,wiftype; std::vector<CPubKey> pubkeys;
-    cp = CCinit(&C,EVAL_IMPORTGATEWAY);
-    SetCCtxids(txids,cp->unspendableCCaddr,true,cp->evalcode,zeroid,'B');
+
+    CCImportGatewayContract_info C;
+    SetCCtxids(txids,C.unspendableCCaddr,true,C.evalcode,zeroid,'B');
     for (std::vector<uint256>::const_iterator it=txids.begin(); it!=txids.end(); it++)
     {
         txid = *it;
@@ -1193,10 +1199,9 @@ UniValue ImportGatewayList()
 
 UniValue ImportGatewayExternalAddress(uint256 bindtxid,CPubKey pubkey)
 {
-    UniValue result(UniValue::VOBJ); struct CCcontract_info *cp,C; uint256 txid,hashBlock,oracletxid; CTransaction tx;
+    UniValue result(UniValue::VOBJ); uint256 txid,hashBlock,oracletxid; CTransaction tx;
     std::string coin; int64_t numvouts; char str[65],addr[65],burnaddr[65]; uint8_t M,N,taddr,prefix,prefix2,wiftype; std::vector<CPubKey> msigpubkeys;
     
-    cp = CCinit(&C,EVAL_IMPORTGATEWAY);
     if ( myGetTransaction(bindtxid,tx,hashBlock) == 0 || (numvouts= tx.vout.size()) <= 0 )
     {        
         CCerror = strprintf("cant find bindtxid %s",uint256_str(str,bindtxid));
@@ -1217,10 +1222,11 @@ UniValue ImportGatewayExternalAddress(uint256 bindtxid,CPubKey pubkey)
 
 UniValue ImportGatewayDumpPrivKey(uint256 bindtxid,CKey key)
 {
-    UniValue result(UniValue::VOBJ); struct CCcontract_info *cp,C; uint256 txid,hashBlock,oracletxid; CTransaction tx;
-    std::string coin,priv; int64_t numvouts; char str[65],addr[65],burnaddr[65]; uint8_t M,N,taddr,prefix,prefix2,wiftype; std::vector<CPubKey> msigpubkeys;
+    UniValue result(UniValue::VOBJ);
+    uint256 txid,hashBlock,oracletxid; CTransaction tx;
+    std::string coin,priv; int64_t numvouts; char str[65],addr[65],burnaddr[65]; uint8_t M,N,taddr,prefix,prefix2,wiftype; 
+    std::vector<CPubKey> msigpubkeys;
     
-    cp = CCinit(&C,EVAL_IMPORTGATEWAY);
     if ( myGetTransaction(bindtxid,tx,hashBlock) == 0 || (numvouts= tx.vout.size()) <= 0 )
     {        
         CCerror = strprintf("cant find bindtxid %s",uint256_str(str,bindtxid));
@@ -1245,11 +1251,11 @@ UniValue ImportGatewayInfo(uint256 bindtxid)
     CMutableTransaction mtx = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_nextheight());
     UniValue result(UniValue::VOBJ),a(UniValue::VARR); std::string coin; char str[67],numstr[65],burnaddr[64],gatewaystokens[64];
     uint8_t M,N; std::vector<CPubKey> pubkeys; uint8_t taddr,prefix,prefix2,wiftype; uint256 oracletxid,hashBlock; CTransaction tx;
-    CPubKey ImportGatewaypk; struct CCcontract_info *cp,C; int32_t i; int64_t numvouts,remaining; std::vector<CPubKey> msigpubkeys;
+    CPubKey ImportGatewaypk; int32_t i; int64_t numvouts,remaining; std::vector<CPubKey> msigpubkeys;
   
-    cp = CCinit(&C,EVAL_IMPORTGATEWAY);
-    ImportGatewaypk = GetUnspendable(cp,0);
-    GetTokensCCaddress(cp,gatewaystokens,ImportGatewaypk);
+    CCImportGatewayContract_info C;
+    ImportGatewaypk = C.GetUnspendable();
+    GetTokensCCaddress(&C,gatewaystokens,ImportGatewaypk);
     if ( myGetTransaction(bindtxid,tx,hashBlock) == 0 || (numvouts= tx.vout.size()) <= 0 )
     {        
         CCerror = strprintf("cant find bindtxid %s",uint256_str(str,bindtxid));

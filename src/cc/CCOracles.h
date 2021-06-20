@@ -12,14 +12,10 @@
  * Removal or modification of this copyright notice is prohibited.            *
  *                                                                            *
  ******************************************************************************/
-
-
-#ifndef CC_ORACLES_H
-#define CC_ORACLES_H
+#pragma once
 
 #include "CCinclude.h"
 
-bool OraclesValidate(struct CCcontract_info *cp,Eval* eval,const CTransaction &tx, uint32_t nIn);
 UniValue OracleCreate(const CPubKey& pk, int64_t txfee,std::string name,std::string description,std::string format);
 UniValue OracleFund(const CPubKey& pk, int64_t txfee,uint256 oracletxid);
 UniValue OracleRegister(const CPubKey& pk, int64_t txfee,uint256 oracletxid,int64_t datafee);
@@ -31,4 +27,18 @@ UniValue OracleDataSamples(uint256 reforacletxid,char* batonaddr,int32_t num);
 UniValue OracleInfo(uint256 origtxid);
 UniValue OraclesList();
 
-#endif
+struct CCOraclesContract_info : public CCcontract_info
+{
+    CCOraclesContract_info() : CCcontract_info()
+    {
+        evalcode = EVAL_ORACLES;
+        strcpy(unspendableCCaddr, "REt2C4ZMnX8YYX1DRpffNA4hECZTFm39e3");
+        strcpy(normaladdr, "RHkFKzn1csxA3fWzAsxsLWohoCgBbirXb5");
+        strcpy(CChexstr, "038c1d42db6a45a57eccb8981b078fb7857b9b496293fe299d2b8d120ac5b5691a");
+        uint8_t OraclesCCpriv[32] = { 0xf7, 0x4b, 0x5b, 0xa2, 0x7a, 0x5e, 0x9c, 0xda, 0x89, 
+                0xb1, 0xcb, 0xb9, 0xe6, 0x9c, 0x2c, 0x70, 0x85, 0x37, 0xdd, 0x00, 0x7a, 
+                0x67, 0xff, 0x7c, 0x62, 0x1b, 0xe2, 0xfb, 0x04, 0x8f, 0x85, 0xbf };
+        memcpy(CCpriv, OraclesCCpriv, 32); 
+    }
+    virtual bool validate(Eval* eval, const CTransaction &tx, uint32_t nIn) override;
+};
