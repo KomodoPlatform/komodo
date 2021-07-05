@@ -579,6 +579,7 @@ std::string HelpMessage(HelpMessageMode mode)
         strUsage += HelpMessageOpt("-metricsrefreshtime", strprintf(_("Number of seconds between metrics refreshes (default: %u if running in a console, %u otherwise)"), 1, 600));
     }
     strUsage += HelpMessageGroup(_("Komodo Asset Chain options:"));
+    strUsage += HelpMessageOpt("-ac_aur", _("Enable/disable active user rewards (parameters: 1, activationHeight (60000), minCoins (10), LOCKTIME_THRESHOLD (500000000), percentage (5)), default is disable"));
     strUsage += HelpMessageOpt("-ac_algo", _("Choose PoW mining algorithm, default is Equihash"));
     strUsage += HelpMessageOpt("-ac_blocktime", _("Block time in seconds, default is 60"));
     strUsage += HelpMessageOpt("-ac_cc", _("Cryptoconditions, default 0"));
@@ -787,7 +788,7 @@ void ThreadUpdateKomodoInternals() {
 
             boost::this_thread::interruption_point();
 
-            if ( ASSETCHAINS_SYMBOL[0] == 0 )
+            if ( ASSETCHAINS_SYMBOL[0] == 0 || ASSETCHAINS_ACTIVEUSERREWARD[0] == 1)
                 {
                     if ( KOMODO_NSPV_FULLNODE ) {
                         auto start = std::chrono::high_resolution_clock::now();

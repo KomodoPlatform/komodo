@@ -19,7 +19,7 @@ int8_t is_STAKED(const char *chain_name)
         STAKED = 1; // These chains are allowed coin emissions.
     else if ( (strncmp(chain_name, "LABS", 4) == 0) ) 
         STAKED = 2; // These chains have no coin emission, block subsidy is always 0, and comission is 0. Notary pay is allowed.
-    else if ( (strcmp(chain_name, "CFEK") == 0) || (strncmp(chain_name, "CFEK", 4) == 0) )
+    else if ( (strcmp(chain_name, "CFEK") == 0) || (strncmp(chain_name, "CFEK", 4) == 0) ) // ticker to add here
         STAKED = 3; // These chains have no speical rules at all.
     else if ( (strcmp(chain_name, "TEST") == 0) || (strncmp(chain_name, "TEST", 4) == 0) )
         STAKED = 4; // These chains are for testing consensus to create a chain etc. Not meant to be actually used for anything important.

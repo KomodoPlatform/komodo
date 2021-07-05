@@ -255,7 +255,7 @@ UniValue getinfo(const UniValue& params, bool fHelp, const CPubKey& mypk)
 #ifdef ENABLE_WALLET
         if (pwalletMain) {
             obj.push_back(Pair("walletversion", pwalletMain->GetVersion()));
-            if ( ASSETCHAINS_SYMBOL[0] == 0 )
+            if ( ASSETCHAINS_SYMBOL[0] == 0 || ASSETCHAINS_ACTIVEUSERREWARD[0] == 1)
             {
                 obj.push_back(Pair("interest",       ValueFromAmount(KOMODO_INTERESTSUM)));
                 obj.push_back(Pair("balance",       ValueFromAmount(KOMODO_WALLETBALANCE))); //pwalletMain->GetBalance()

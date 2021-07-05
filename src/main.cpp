@@ -1830,7 +1830,7 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
     }
 //fprintf(stderr,"addmempool 1\n");
     auto verifier = libzcash::ProofVerifier::Strict();
-    if ( ASSETCHAINS_SYMBOL[0] == 0 && komodo_validate_interest(tx,chainActive.LastTip()->GetHeight()+1,chainActive.LastTip()->GetMedianTimePast() + 777,0) < 0 )
+    if ( (ASSETCHAINS_SYMBOL[0] == 0 || ASSETCHAINS_ACTIVEUSERREWARD[0] == 1) && komodo_validate_interest(tx,chainActive.LastTip()->GetHeight()+1,chainActive.LastTip()->GetMedianTimePast() + 777,0) < 0 )
     {
         fprintf(stderr,"AcceptToMemoryPool komodo_validate_interest failure\n");
         return error("AcceptToMemoryPool: komodo_validate_interest failed");
@@ -2850,14 +2850,14 @@ namespace Consensus {
             // Check for negative or overflow input values
             nValueIn += coins->vout[prevout.n].nValue;
 #ifdef KOMODO_ENABLE_INTEREST
-            if ( ASSETCHAINS_SYMBOL[0] == 0 && nSpendHeight > 60000 )//chainActive.LastTip() != 0 && chainActive.LastTip()->GetHeight() >= 60000 )
+            if ( (ASSETCHAINS_SYMBOL[0] == 0 && nSpendHeight > 60000 && coins->vout[prevout.n].nValue >= 10*COIN) 
+		|| (ASSETCHAINS_ACTIVEUSERREWARD[0] == 1 && nSpendHeight > ASSETCHAINS_ACTIVEUSERREWARD[1] && coins->vout[prevout.n].nValue >= ASSETCHAINS_ACTIVEUSERREWARD[2]*COIN) )//chainActive.LastTip() != 0 && chainActive.LastTip()->GetHeight() >= 60000 )
             {
-                if ( coins->vout[prevout.n].nValue >= 10*COIN )
                 {
                     int64_t interest; int32_t txheight; uint32_t locktime;
                     if ( (interest= komodo_accrued_interest(&txheight,&locktime,prevout.hash,prevout.n,0,coins->vout[prevout.n].nValue,(int32_t)nSpendHeight-1)) != 0 )
                     {
-                        //fprintf(stderr,"checkResult %.8f += val %.8f interest %.8f ht.%d lock.%u tip.%u\n",(double)nValueIn/COIN,(double)coins->vout[prevout.n].nValue/COIN,(double)interest/COIN,txheight,locktime,chainActive.LastTip()->nTime);
+                        fprintf(stderr,"checkResult %.8f += val %.8f interest = %.8f ht.%d lock.%u tip.%u\n",(double)nValueIn/COIN,(double)coins->vout[prevout.n].nValue/COIN,(double)interest/COIN,txheight,locktime,chainActive.LastTip()->nTime);
                         nValueIn += interest;
                     }
                 }

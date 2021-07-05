@@ -1448,13 +1448,13 @@ void komodo_passport_iteration()
     }
     if ( komodo_chainactive_timestamp() > lastinterest )
     {
-        if ( ASSETCHAINS_SYMBOL[0] == 0 )
+        if ( ASSETCHAINS_SYMBOL[0] == 0 || ASSETCHAINS_ACTIVEUSERREWARD[0] == 1)
             komodo_interestsum();
         //komodo_longestchain();
         lastinterest = komodo_chainactive_timestamp();
     }
     refsp = komodo_stateptr(symbol,dest);
-    if ( ASSETCHAINS_SYMBOL[0] == 0 || strcmp(ASSETCHAINS_SYMBOL,"KMDCC") == 0 )
+    if ( ASSETCHAINS_SYMBOL[0] == 0 || strcmp(ASSETCHAINS_SYMBOL,"KMDCC") == 0 ) // ?
     {
         refid = 33;
         limit = 10000000;
