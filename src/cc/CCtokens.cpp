@@ -22,13 +22,15 @@
 */
 
 #include "CCtokens_impl.h"
+#include "CCTokelData.h"
+
 
 thread_local uint32_t tokenValIndentSize = 0; // for debug logging
 
 
 // helper funcs:
 
-bool IsEqualScriptPubKeys(const CScript &spk1, const CScript &spk2)
+bool IsEqualDestinations(const CScript &spk1, const CScript &spk2)
 {
     char addr1[KOMODO_ADDRESS_BUFSIZE];
     char addr2[KOMODO_ADDRESS_BUFSIZE];
@@ -48,16 +50,6 @@ static void FilterOutTokensUnspendablePk(const std::vector<CPubKey> &sourcePubke
         if (pk != tokensUnspendablePk)
             destPubkeys.push_back(pk);
 
-}
-
-static bool HasMyCCVin(struct CCcontract_info *cp, const CTransaction &tx)
-{
-    for (auto const &vin : tx.vin)   {
-        if (cp->ismyvin(vin.scriptSig)) {
-            return true;
-        }
-    }
-    return false;
 }
 
 static std::vector<uint8_t> GetEvalCodesCCV2(const CScript& spk)
@@ -84,17 +76,18 @@ static std::vector<uint8_t> GetEvalCodesCCV2(const CScript& spk)
 // internal function to check if token vout is valid
 // returns amount or -1 
 // return also tokenid
-CAmount TokensV1::CheckTokensvout(bool goDeeper, bool checkPubkeys /*<--not used, always true*/, struct CCcontract_info *cp, Eval* eval, const CTransaction& tx, int32_t v, uint256 &reftokenid, std::string &errorStr)
+CAmount TokensV1::CheckTokensvout(struct CCcontract_info *cp, Eval* eval, const CTransaction& tx, int32_t v, CScript &opret, uint256 &reftokenid, uint8_t &funcId, std::string &errorStr)
 {
 	// this is just for log messages indentation fur debugging recursive calls:
 	std::string indentStr = std::string().append(tokenValIndentSize, '.');
+    const char *funcname = __func__;
 	
-    LOGSTREAM(cctokens_log, CCLOG_DEBUG2, stream << indentStr << "CheckTokensvout()" << " entered for txid=" << tx.GetHash().GetHex() << " v=" << v <<  std::endl);
+    LOGSTREAM(cctokens_log, CCLOG_DEBUG2, stream << indentStr << funcname << "()" << " entered for txid=" << tx.GetHash().GetHex() << " v=" << v <<  std::endl);
 
     int32_t n = tx.vout.size();
     // just check boundaries:
     if (n == 0 || v < 0 || v >= n) {  
-        LOGSTREAM(cctokens_log, CCLOG_INFO, stream << indentStr << "CheckTokensvout()" << " incorrect params: (n == 0 or v < 0 or v >= n)" << " v=" << v << " n=" << n << " returning error" << std::endl);
+        LOGSTREAM(cctokens_log, CCLOG_INFO, stream << indentStr << funcname << "()" << " incorrect params: (n == 0 or v < 0 or v >= n)" << " v=" << v << " n=" << n << " returning error" << std::endl);
         errorStr = "out of bounds";
         return(-1);
     }
@@ -123,17 +116,10 @@ CAmount TokensV1::CheckTokensvout(bool goDeeper, bool checkPubkeys /*<--not used
 
         // instead of recursively checking tx just check that the tx has token cc vin, that is it was validated by tokens cc module
         bool hasMyccvin = false;
-        for (auto const &vin : tx.vin)   {
-            if (cp->ismyvin(vin.scriptSig)) {
-                hasMyccvin = true;
-                break;
-            }
-        }
+        std::for_each (tx.vin.begin(), tx.vin.end(), [&](const CTxIn &vin){ cp->ismyvin(vin.scriptSig) ? hasMyccvin = true : hasMyccvin = hasMyccvin; });
 
-
-        CScript opret;
         bool isLastVoutOpret;
-        if (GetCCDropAsOpret(tx.vout[v].scriptPubKey, opret))
+        if (!(opret = GetCCDropAsOpret(tx.vout[v].scriptPubKey)).empty())
         {
             isLastVoutOpret = false;    
         }
@@ -144,11 +130,11 @@ CAmount TokensV1::CheckTokensvout(bool goDeeper, bool checkPubkeys /*<--not used
         }
 
         uint256 tokenIdOpret;
-        std::vector<vscript_t>  oprets;
+        std::vector<vscript_t>  vdatas;
         std::vector<CPubKey> voutPubkeysInOpret;
 
         // token opret most important checks (tokenid == reftokenid, tokenid is non-zero, tx is 'tokenbase'):
-        uint8_t funcId = DecodeTokenOpRetV1(opret, tokenIdOpret, voutPubkeysInOpret, oprets);
+        funcId = DecodeTokenOpRetV1(opret, tokenIdOpret, voutPubkeysInOpret, vdatas);
         if (funcId == 0)    {
             // bad opreturn
             // errorStr = "can't decode opreturn data";
@@ -178,21 +164,20 @@ CAmount TokensV1::CheckTokensvout(bool goDeeper, bool checkPubkeys /*<--not used
             return -1;
         }
         
-        
         if (!isLastVoutOpret)  // check OP_DROP vouts:
         {            
             // get up to two eval codes from cc data:
             uint8_t evalCode1 = 0, evalCode2 = 0;
-            if (oprets.size() >= 1) {
-                evalCode1 = oprets[0].size() > 0 ? oprets[0][0] : 0;
-                if (oprets.size() >= 2)
-                    evalCode2 = oprets[1].size() > 0 ? oprets[1][0] : 0;
+            if (vdatas.size() >= 1) {
+                evalCode1 = vdatas[0].size() > 0 ? vdatas[0][0] : 0;
+                if (vdatas.size() >= 2)
+                    evalCode2 = vdatas[1].size() > 0 ? vdatas[1][0] : 0;
             }
 
             // get optional nft eval code:
             TokenDataTuple tokenData;
             vscript_t vopretNonfungible;
-            GetTokenData<TokensV1>(reftokenid, tokenData, vopretNonfungible);
+            GetTokenData<TokensV1>(eval, reftokenid, tokenData, vopretNonfungible);
 
             if (vopretNonfungible.size() > 0)   {
                 // shift evalcodes so the first is NFT evalcode 
@@ -200,7 +185,7 @@ CAmount TokensV1::CheckTokensvout(bool goDeeper, bool checkPubkeys /*<--not used
                 evalCode1 = vopretNonfungible[0];
             }
 
-            LOGSTREAM(cctokens_log, CCLOG_DEBUG2, stream << indentStr << "IsTokensvout() for txid=" << tx.GetHash().GetHex() << " checking evalCode1=" << (int)evalCode1 << " evalCode2=" << (int)evalCode2 << " voutPubkeysInOpret.size()=" << voutPubkeysInOpret.size() <<  std::endl);
+            LOGSTREAM(cctokens_log, CCLOG_DEBUG2, stream << indentStr << funcname << "()" << " for txid=" << tx.GetHash().GetHex() << " checking evalCode1=" << (int)evalCode1 << " evalCode2=" << (int)evalCode2 << " voutPubkeysInOpret.size()=" << voutPubkeysInOpret.size() <<  std::endl);
 
             if (IsTokenTransferFuncid(funcId))
             {
@@ -216,15 +201,15 @@ CAmount TokensV1::CheckTokensvout(bool goDeeper, bool checkPubkeys /*<--not used
                 if (voutPubkeysInOpret.size() == 1) 
                 {
                     if (evalCode1 == 0 && evalCode2 == 0)   {
-                        if (IsEqualScriptPubKeys(tx.vout[v].scriptPubKey, MakeTokensCC1vout(EVAL_TOKENS, tx.vout[v].nValue, voutPubkeysInOpret[0]).scriptPubKey))
+                        if (IsEqualDestinations(tx.vout[v].scriptPubKey, MakeTokensCC1vout(EVAL_TOKENS, tx.vout[v].nValue, voutPubkeysInOpret[0]).scriptPubKey))
                             return tx.vout[v].nValue;
                     }
                     else if (evalCode1 != 0 && evalCode2 == 0)  {
-                        if (IsEqualScriptPubKeys(tx.vout[v].scriptPubKey, MakeTokensCC1vout(evalCode1, tx.vout[v].nValue, voutPubkeysInOpret[0]).scriptPubKey))
+                        if (IsEqualDestinations(tx.vout[v].scriptPubKey, MakeTokensCC1vout(evalCode1, tx.vout[v].nValue, voutPubkeysInOpret[0]).scriptPubKey))
                             return tx.vout[v].nValue;
                     }
                     else if (evalCode1 != 0 && evalCode2 != 0)  {
-                        if (IsEqualScriptPubKeys(tx.vout[v].scriptPubKey, MakeTokensCC1vout(evalCode1, evalCode2, tx.vout[v].nValue, voutPubkeysInOpret[0]).scriptPubKey))
+                        if (IsEqualDestinations(tx.vout[v].scriptPubKey, MakeTokensCC1vout(evalCode1, evalCode2, tx.vout[v].nValue, voutPubkeysInOpret[0]).scriptPubKey))
                             return tx.vout[v].nValue;
                     }
                     else {
@@ -235,15 +220,15 @@ CAmount TokensV1::CheckTokensvout(bool goDeeper, bool checkPubkeys /*<--not used
                 else if (voutPubkeysInOpret.size() == 2)
                 {
                     if (evalCode1 == 0 && evalCode2 == 0)   {
-                        if (IsEqualScriptPubKeys(tx.vout[v].scriptPubKey, MakeTokensCC1of2vout(EVAL_TOKENS, tx.vout[v].nValue, voutPubkeysInOpret[0], voutPubkeysInOpret[1]).scriptPubKey))
+                        if (IsEqualDestinations(tx.vout[v].scriptPubKey, MakeTokensCC1of2vout(EVAL_TOKENS, tx.vout[v].nValue, voutPubkeysInOpret[0], voutPubkeysInOpret[1]).scriptPubKey))
                             return tx.vout[v].nValue;
                     }
                     else if (evalCode1 != 0 && evalCode2 == 0)  {
-                        if (IsEqualScriptPubKeys(tx.vout[v].scriptPubKey, MakeTokensCC1of2vout(evalCode1, tx.vout[v].nValue, voutPubkeysInOpret[0], voutPubkeysInOpret[1]).scriptPubKey))
+                        if (IsEqualDestinations(tx.vout[v].scriptPubKey, MakeTokensCC1of2vout(evalCode1, tx.vout[v].nValue, voutPubkeysInOpret[0], voutPubkeysInOpret[1]).scriptPubKey))
                             return tx.vout[v].nValue;
                     }
                     else if (evalCode1 != 0 && evalCode2 != 0)  {
-                        if (IsEqualScriptPubKeys(tx.vout[v].scriptPubKey, MakeTokensCC1of2vout(evalCode1, evalCode2, tx.vout[v].nValue, voutPubkeysInOpret[0], voutPubkeysInOpret[1]).scriptPubKey))
+                        if (IsEqualDestinations(tx.vout[v].scriptPubKey, MakeTokensCC1of2vout(evalCode1, evalCode2, tx.vout[v].nValue, voutPubkeysInOpret[0], voutPubkeysInOpret[1]).scriptPubKey))
                             return tx.vout[v].nValue;
                     }
                     else {
@@ -262,7 +247,7 @@ CAmount TokensV1::CheckTokensvout(bool goDeeper, bool checkPubkeys /*<--not used
                 // funcid == 'c' 
                 if (tx.IsCoinImport())   {
                     // imported coin is checked in EvalImportCoin
-                    if (!IsTokenMarkerVout<TokensV1>(tx.vout[v]))  // exclude marker
+                    if (IsTokenMarkerVout<TokensV1>(tx.vout[v]) > 0LL)  // exclude marker
                         return tx.vout[v].nValue;
                     else
                         return 0;  
@@ -270,39 +255,39 @@ CAmount TokensV1::CheckTokensvout(bool goDeeper, bool checkPubkeys /*<--not used
 
                 vscript_t vorigPubkey;
                 std::string  dummyName, dummyDescription;
-                std::vector<vscript_t>  oprets;
+                std::vector<vscript_t>  vdatas;
 
-                if (DecodeTokenCreateOpRetV1(tx.vout.back().scriptPubKey, vorigPubkey, dummyName, dummyDescription, oprets) == 0) {
-                    LOGSTREAM(cctokens_log, CCLOG_INFO, stream << indentStr << "IsTokensvout() could not decode create opret" << " for txid=" << tx.GetHash().GetHex() << " for tokenid=" << reftokenid.GetHex() << std::endl);
+                if (DecodeTokenCreateOpRetV1(tx.vout.back().scriptPubKey, vorigPubkey, dummyName, dummyDescription, vdatas) == 0) {
+                    LOGSTREAM(cctokens_log, CCLOG_INFO, stream << indentStr << funcname << "()" << " could not decode create opret" << " for txid=" << tx.GetHash().GetHex() << " for tokenid=" << reftokenid.GetHex() << std::endl);
                     return 0;
                 }
 
                 CPubKey origPubkey = pubkey2pk(vorigPubkey);
                 vuint8_t vopretNFT;
-                GetOpReturnCCBlob(oprets, vopretNFT);
+                GetOpReturnCCBlob(vdatas, vopretNFT);
 
                 // calc cc outputs for origPubkey 
                 CAmount ccOutputs = 0;
                 for (const auto &vout : tx.vout)
                     if (vout.scriptPubKey.IsPayToCryptoCondition())  {
                         CTxOut testvout = vopretNFT.size() == 0 ? MakeCC1vout(EVAL_TOKENS, vout.nValue, origPubkey) : MakeTokensCC1vout(vopretNFT[0], vout.nValue, origPubkey);
-                        if (IsEqualScriptPubKeys(vout.scriptPubKey, testvout.scriptPubKey)) 
+                        if (IsEqualDestinations(vout.scriptPubKey, testvout.scriptPubKey)) 
                             ccOutputs += vout.nValue;
                     }
 
-                CAmount normalInputs = TotalPubkeyNormalInputs(tx, origPubkey);  // calc normal inputs really signed by originator pubkey (someone not cheating with originator pubkey)
+                CAmount normalInputs = TotalPubkeyNormalInputs(eval, tx, origPubkey);  // calc normal inputs really signed by originator pubkey (someone not cheating with originator pubkey)
                 if (normalInputs >= ccOutputs) {
-                    LOGSTREAM(cctokens_log, CCLOG_DEBUG2, stream << indentStr << "IsTokensvout() assured normalInputs >= ccOutputs" << " for tokenbase=" << reftokenid.GetHex() << std::endl);
+                    LOGSTREAM(cctokens_log, CCLOG_DEBUG2, stream << indentStr << funcname << "()" << " assured normalInputs >= ccOutputs" << " for tokenbase=" << reftokenid.GetHex() << std::endl);
 
                     // make test vout for origpubkey (either for fungible or NFT):
                     CTxOut testvout = vopretNFT.size() == 0 ? MakeCC1vout(EVAL_TOKENS, tx.vout[v].nValue, origPubkey) : MakeTokensCC1vout(vopretNFT[0], tx.vout[v].nValue, origPubkey);
-                    if (IsEqualScriptPubKeys(tx.vout[v].scriptPubKey, testvout.scriptPubKey))    // check vout sent to orig pubkey
+                    if (IsEqualDestinations(tx.vout[v].scriptPubKey, testvout.scriptPubKey))    // check vout sent to orig pubkey
                         return tx.vout[v].nValue;
                     else
                         return 0;
                 } 
                 else {
-                    LOGSTREAM(cctokens_log, CCLOG_INFO, stream << indentStr << "IsTokensvout() skipping vout not fulfilled normalInputs >= ccOutput" << " for tokenbase=" << reftokenid.GetHex() << " normalInputs=" << normalInputs << " ccOutputs=" << ccOutputs << std::endl);
+                    LOGSTREAM(cctokens_log, CCLOG_INFO, stream << indentStr << funcname << "()" << " skipping vout not fulfilled normalInputs >= ccOutput" << " for tokenbase=" << reftokenid.GetHex() << " normalInputs=" << normalInputs << " ccOutputs=" << ccOutputs << std::endl);
                     errorStr = "tokenbase tx issued by not pubkey in opret";
                     return -1;
                 }
@@ -321,7 +306,7 @@ CAmount TokensV1::CheckTokensvout(bool goDeeper, bool checkPubkeys /*<--not used
                 return -1;
             }
 
-            LOGSTREAM(cctokens_log, CCLOG_DEBUG2, stream << indentStr << "IsTokensvout() ValidateTokenOpret returned not-null funcId=" << (char)(funcId ? funcId : ' ') << " for txid=" << tx.GetHash().GetHex() << " for tokenid=" << reftokenid.GetHex() << std::endl);
+            LOGSTREAM(cctokens_log, CCLOG_DEBUG2, stream << indentStr << funcname << "()" << " function ValidateTokenOpret returned not-null funcId=" << (char)(funcId ? funcId : ' ') << " for txid=" << tx.GetHash().GetHex() << " for tokenid=" << reftokenid.GetHex() << std::endl);
             
             TokenDataTuple tokenData;
             vscript_t vopretExtra, vopretNonfungible;
@@ -337,18 +322,19 @@ CAmount TokensV1::CheckTokensvout(bool goDeeper, bool checkPubkeys /*<--not used
             std::vector<std::pair<CTxOut, std::string>> testVouts;
 
             uint8_t version;
-            DecodeTokenOpRetV1(tx.vout.back().scriptPubKey, tokenIdOpret, voutPubkeysInOpret, oprets);
-            LOGSTREAM(cctokens_log, CCLOG_DEBUG2, stream << "IsTokensvout() oprets.size()=" << oprets.size() << std::endl);
+            std::vector<vscript_t>  vdatas;
+            DecodeTokenOpRetV1(tx.vout.back().scriptPubKey, tokenIdOpret, voutPubkeysInOpret, vdatas);
+            LOGSTREAM(cctokens_log, CCLOG_DEBUG2, stream << funcname << "()" << " vdatas.size()=" << vdatas.size() << std::endl);
             
             // get assets/channels/gateways token data in vopretExtra:
             //FilterOutNonCCOprets(oprets, vopretExtra);  
             // NOTE: only 1 additional evalcode in token opret is currently supported:
-            if (oprets.size() > 0)
-                vopretExtra = oprets[0];
-            LOGSTREAM(cctokens_log, CCLOG_DEBUG2, stream << "IsTokensvout() vopretExtra=" << HexStr(vopretExtra) << std::endl);
+            if (vdatas.size() > 0)
+                vopretExtra = vdatas[0];
+            LOGSTREAM(cctokens_log, CCLOG_DEBUG2, stream << funcname << "()" << " vopretExtra=" << HexStr(vopretExtra) << std::endl);
 
             // get non-fungible data
-            GetTokenData<TokensV1>(reftokenid, tokenData, vopretNonfungible);
+            GetTokenData<TokensV1>(eval, reftokenid, tokenData, vopretNonfungible);
             std::vector<CPubKey> voutPubkeys;
             FilterOutTokensUnspendablePk(voutPubkeysInOpret, voutPubkeys);  // cannot send tokens to token unspendable cc addr (only marker is allowed there)
 
@@ -448,7 +434,7 @@ CAmount TokensV1::CheckTokensvout(bool goDeeper, bool checkPubkeys /*<--not used
                 // try all test vouts:
                 for (const auto &t : testVouts) {
                     if (t.first == tx.vout[v]) {  // test vout matches 
-                        LOGSTREAM(cctokens_log, CCLOG_DEBUG1, stream << indentStr << "IsTokensvout() valid amount=" << tx.vout[v].nValue << " msg=" << t.second << " evalCode=" << (int)evalCode1 << " evalCode2=" << (int)evalCode2 << " txid=" << tx.GetHash().GetHex() << " tokenid=" << reftokenid.GetHex() << std::endl);
+                        LOGSTREAM(cctokens_log, CCLOG_DEBUG1, stream << indentStr << funcname << "()" << " valid amount=" << tx.vout[v].nValue << " msg=" << t.second << " evalCode=" << (int)evalCode1 << " evalCode2=" << (int)evalCode2 << " txid=" << tx.GetHash().GetHex() << " tokenid=" << reftokenid.GetHex() << std::endl);
                         return tx.vout[v].nValue;
                     }
                 }
@@ -460,18 +446,38 @@ CAmount TokensV1::CheckTokensvout(bool goDeeper, bool checkPubkeys /*<--not used
                 {
                     vscript_t vorigPubkey;
                     std::string  dummyName, dummyDescription;
-                    std::vector<vscript_t>  oprets;
+                    std::vector<vscript_t>  vdatas;
                     uint8_t version;
 
-                    if (DecodeTokenCreateOpRetV1(tx.vout.back().scriptPubKey, vorigPubkey, dummyName, dummyDescription, oprets) == 0) {
-                        LOGSTREAM(cctokens_log, CCLOG_INFO, stream << indentStr << "IsTokensvout() could not decode create opret" << " for txid=" << tx.GetHash().GetHex() << " for tokenid=" << reftokenid.GetHex() << std::endl);
+                    if (DecodeTokenCreateOpRetV1(tx.vout.back().scriptPubKey, vorigPubkey, dummyName, dummyDescription, vdatas) == 0) {
+                        LOGSTREAM(cctokens_log, CCLOG_INFO, stream << indentStr << funcname << "()" << " could not decode create opret" << " for txid=" << tx.GetHash().GetHex() << " for tokenid=" << reftokenid.GetHex() << std::endl);
                         return 0;
                     }
 
                     CPubKey origPubkey = pubkey2pk(vorigPubkey);
                     vuint8_t vopretNFT;
-                    GetOpReturnCCBlob(oprets, vopretNFT);
+                    GetOpReturnCCBlob(vdatas, vopretNFT);
                     
+                    if (origPubkey == GetUnspendable(cp, NULL))  {
+                        errorStr = "cannot create tokens with token shared pubkey"; 
+                        return -1;
+                    }
+
+                    /*
+                    if (vdatas.size() > 1)  {
+                        LOGSTREAMFN(cctokens_log, CCLOG_DEBUG1, stream << " invalid vdata size for txid=" << tx.GetHash().GetHex() << " v=" << v << " isLastVoutOpret=" << isLastVoutOpret << std::endl);
+                        return -1;  // could not be more than 1 vdata in opreturn
+                    }
+                    std::string tdataError;
+                    std::cerr << __func__ << " vdatas.size()=" << vdatas.size() << std::endl;
+                    if (vdatas.size() > 0)
+                        std::cerr << __func__ << " vdatas[0]=" << HexStr(vdatas[0]) << std::endl;
+                    if (vdatas.size() > 0 && !CheckTokelData(vdatas[0], tdataError))  {
+                        errorStr = tdataError;
+                        return -1;  // invalid tokendata
+                    }
+                    */
+
                     // TODO: add voutPubkeys for 'c' tx
 
                     /* this would not work for imported tokens:
@@ -490,37 +496,37 @@ CAmount TokensV1::CheckTokensvout(bool goDeeper, bool checkPubkeys /*<--not used
                     for (const auto &vout : tx.vout)
                         if (vout.scriptPubKey.IsPayToCryptoCondition())  {
                             CTxOut testvout = vopretNFT.size() == 0 ? MakeCC1vout(EVAL_TOKENS, vout.nValue, origPubkey) : MakeTokensCC1vout(vopretNFT[0], vout.nValue, origPubkey);
-                            if (IsEqualScriptPubKeys(vout.scriptPubKey, testvout.scriptPubKey)) 
+                            if (IsEqualDestinations(vout.scriptPubKey, testvout.scriptPubKey)) 
                                 ccOutputs += vout.nValue;
                         }
 
-                    CAmount normalInputs = TotalPubkeyNormalInputs(tx, origPubkey);  // check if normal inputs are really signed by originator pubkey (someone not cheating with originator pubkey)
-                    LOGSTREAM(cctokens_log, CCLOG_DEBUG2, stream << indentStr << "IsTokensvout() normalInputs=" << normalInputs << " ccOutputs=" << ccOutputs << " for tokenbase=" << reftokenid.GetHex() << std::endl);
+                    CAmount origInputs = TotalPubkeyNormalInputs(eval, tx, origPubkey);  // check if normal inputs are really signed by originator pubkey (someone not cheating with originator pubkey)
+                    LOGSTREAM(cctokens_log, CCLOG_DEBUG2, stream << indentStr << funcname << "()" << " origInputs=" << origInputs << " ccOutputs=" << ccOutputs << " for tokenbase=" << reftokenid.GetHex() << std::endl);
 
-                    if (normalInputs >= ccOutputs) {
-                        LOGSTREAM(cctokens_log, CCLOG_DEBUG2, stream << indentStr << "IsTokensvout() assured normalInputs >= ccOutputs" << " for tokenbase=" << reftokenid.GetHex() << std::endl);
+                    if (origInputs >= ccOutputs) {
+                        LOGSTREAM(cctokens_log, CCLOG_DEBUG2, stream << indentStr << funcname << "()" << " assured origInputs >= ccOutputs" << " for tokenbase=" << reftokenid.GetHex() << std::endl);
                         
                         // make test vout for origpubkey (either for fungible or NFT):
                         CTxOut testvout = vopretNFT.size() == 0 ? MakeCC1vout(EVAL_TOKENS, tx.vout[v].nValue, origPubkey) : MakeTokensCC1vout(vopretNFT[0], tx.vout[v].nValue, origPubkey);
                         
-                        if (IsEqualScriptPubKeys(tx.vout[v].scriptPubKey, testvout.scriptPubKey))    // check vout sent to orig pubkey
+                        if (IsEqualDestinations(tx.vout[v].scriptPubKey, testvout.scriptPubKey))    // check vout sent to orig pubkey
                             return tx.vout[v].nValue;
                         else
                             return 0; // vout is good, but do not take marker into account
                     } 
                     else {
-                        LOGSTREAM(cctokens_log, CCLOG_INFO, stream << indentStr << "IsTokensvout() skipping vout not fulfilled normalInputs >= ccOutput" << " for tokenbase=" << reftokenid.GetHex() << " normalInputs=" << normalInputs << " ccOutputs=" << ccOutputs << std::endl);
+                        LOGSTREAM(cctokens_log, CCLOG_INFO, stream << indentStr << funcname << "()" << " skipping vout not fulfilled normalInputs >= ccOutput" << " for tokenbase=" << reftokenid.GetHex() << " origInputs=" << origInputs << " ccOutputs=" << ccOutputs << std::endl);
                     }
                 }
                 else   {
                     // imported tokens are checked in the eval::ImportCoin() validation code
-                    if (!IsTokenMarkerVout<TokensV1>(tx.vout[v]))  // exclude marker
+                    if (IsTokenMarkerVout<TokensV1>(tx.vout[v]) > 0LL)  // exclude marker
                         return tx.vout[v].nValue;
                     else
                         return 0; // vout is good, but do not take marker into account
                 }
             }
-            LOGSTREAM(cctokens_log, CCLOG_DEBUG1, stream << indentStr << "IsTokensvout() no valid vouts evalCode=" << (int)evalCode1 << " evalCode2=" << (int)evalCode2 << " for txid=" << tx.GetHash().GetHex() << " for tokenid=" << reftokenid.GetHex() << std::endl);
+            LOGSTREAM(cctokens_log, CCLOG_DEBUG1, stream << indentStr << funcname << "()" << " no valid vouts evalCode=" << (int)evalCode1 << " evalCode2=" << (int)evalCode2 << " for txid=" << tx.GetHash().GetHex() << " for tokenid=" << reftokenid.GetHex() << std::endl);
         }
 	}
 	return(0);  // normal vout
@@ -531,29 +537,26 @@ CAmount TokensV1::CheckTokensvout(bool goDeeper, bool checkPubkeys /*<--not used
 // internal function to check if token 2 vout is valid
 // returns amount or -1 
 // return also tokenid
-CAmount TokensV2::CheckTokensvout(bool goDeeper, bool checkPubkeys, struct CCcontract_info *cp, Eval* eval, const CTransaction& tx, int32_t v, uint256 &reftokenid, std::string &errorStr)
+CAmount TokensV2::CheckTokensvout(struct CCcontract_info *cp, Eval* eval, const CTransaction& tx, int32_t v, CScript &opret, uint256 &reftokenid, uint8_t &funcId, std::string &errorStr)
 {
-	// this is just for log messages indentation fur debugging recursive calls:
-	std::string indentStr = std::string().append(tokenValIndentSize, '.');
-	
-    LOGSTREAM(cctokens_log, CCLOG_DEBUG2, stream << indentStr << "CheckTokensvout()" << " entered for txid=" << tx.GetHash().GetHex() << " v=" << v << std::endl);
+	// this is just for log messages indentation fur debugging recursive calls:	
+    LOGSTREAMFN(cctokens_log, CCLOG_DEBUG2, stream << " entered for txid=" << tx.GetHash().GetHex() << " v=" << v << std::endl);
 
     int32_t n = tx.vout.size();
     // just check boundaries:
     if (n == 0 || v < 0 || v >= n) {  
-        LOGSTREAM(cctokens_log, CCLOG_INFO, stream << indentStr << "CheckTokensvout()" << " incorrect params: (n == 0 or v < 0 or v >= n)" << " v=" << v << " n=" << n << " returning error" << std::endl);
+        LOGSTREAMFN(cctokens_log, CCLOG_DEBUG1, stream << " incorrect params: (n == 0 or v < 0 or v >= n)" << " v=" << v << " n=" << n << " returning error" << std::endl);
         errorStr = "out of bounds";
         return -1;
     }
 
-
     std::vector<vscript_t> vParams;
     CScript dummy;	
-    if (tx.vout[v].scriptPubKey.IsPayToCryptoCondition(&dummy, vParams)) 
-	{
-        CScript opret;
+    if (tx.vout[v].scriptPubKey.IsPayToCryptoCondition(&dummy, vParams) && 
+        tx.vout[v].scriptPubKey.SpkHasEvalcodeCCV2(EVAL_TOKENSV2))  // it's token output, check it
+    {        
         bool isLastVoutOpret;
-        if (GetCCDropAsOpret(tx.vout[v].scriptPubKey, opret))
+        if (!(opret = GetCCDropAsOpret(tx.vout[v].scriptPubKey)).empty())
         {
             isLastVoutOpret = false;    
         }
@@ -564,20 +567,32 @@ CAmount TokensV2::CheckTokensvout(bool goDeeper, bool checkPubkeys, struct CCcon
         }
 
         uint256 tokenIdOpret;
-        std::vector<vscript_t>  oprets;
+        std::vector<vscript_t>  vdatas;
         std::vector<CPubKey> vpksdummy;
 
         // token opret most important checks (tokenid == reftokenid, tokenid is non-zero, tx is 'tokenbase'):
-        uint8_t funcId = TokensV2::DecodeTokenOpRet(opret, tokenIdOpret, vpksdummy, oprets);
+        funcId = TokensV2::DecodeTokenOpRet(opret, tokenIdOpret, vpksdummy, vdatas);
         if (funcId == 0)    {
             // bad opreturn
-            // errorStr = "can't decode opreturn data";
-            // return -1;
-            return 0;  // not token vout, skip
+            errorStr = "can't decode opreturn data";
+            LOGSTREAMFN(cctokens_log, CCLOG_DEBUG1, stream << " found token vout with non-token opret for txid=" << tx.GetHash().GetHex() << " v=" << v << " isLastVoutOpret=" << isLastVoutOpret << std::endl);
+            return -1;  // not token vout, skip
         } 
 
         // basic checks:
         if (IsTokenCreateFuncid(funcId))    {
+            /*
+            if (vdatas.size() > 1)  {
+                LOGSTREAMFN(cctokens_log, CCLOG_DEBUG1, stream << " invalid vdata size for txid=" << tx.GetHash().GetHex() << " v=" << v << " isLastVoutOpret=" << isLastVoutOpret << std::endl);
+                return -1;  // could not be more than 1 vdata in opreturn
+            }
+            std::string tdataError;
+            if (vdatas.size() > 0 && !CheckTokelData(vdatas[0], tdataError))  {
+                errorStr = tdataError;
+                return -1;  // invalid tokendata
+            }
+            */
+
             // set returned tokend to tokenbase txid:
             reftokenid = tx.GetHash();
         }
@@ -596,15 +611,20 @@ CAmount TokensV2::CheckTokensvout(bool goDeeper, bool checkPubkeys, struct CCcon
         }
 
         // skip token marker (token global address)
-        if (IsTokenMarkerVout<TokensV2>(tx.vout[v]))
+        CAmount markerAmount = IsTokenMarkerVout<TokensV2>(tx.vout[v]);
+        if (markerAmount > 0)   {
+            LOGSTREAMFN(cctokens_log, CCLOG_DEBUG1, stream << " skipping marker vout for txid=" << tx.GetHash().GetHex() << " v=" << v << std::endl);
             return 0;
+        }
+        else if (markerAmount < 0) {
+            errorStr = "invalid marker value";
+            return -1;
+        }
 
-
-        if (tx.vout[v].scriptPubKey.SpkHasEvalcodeCCV2(EVAL_TOKENSV2))  // it's token output, check it
-        {
-            /* let's do not verify opdrop in V2
+        /* let's do not verify opdrop data in V2
             it is a just hint to users and does not really affect vaidation:
-            // get output pubkeys and verify vout
+        // get output pubkeys and verify vout
+        {
             if (vParams.size() == 0) {
                 errorStr = "no opdrop data";
                 return -1;
@@ -623,14 +643,12 @@ CAmount TokensV2::CheckTokensvout(bool goDeeper, bool checkPubkeys, struct CCcon
             std::vector<uint8_t> evalcodes = GetEvalCodesCCV2(tx.vout[v].scriptPubKey);
             testVout = MakeTokensCCMofNvoutMixed(evalcodes.size() >= 1 ? evalcodes[0] : 0, evalcodes.size() >= 2 ? evalcodes[1] : 0, tx.vout[v].nValue, opdrop.m, opdrop.vKeys);
             
-            if (!IsEqualScriptPubKeys(testVout.scriptPubKey, tx.vout[v].scriptPubKey)) {
+            if (!IsEqualDestinations(testVout.scriptPubKey, tx.vout[v].scriptPubKey)) {
                 errorStr = "pubkeys in opdrop don't match vout";
                 return -1;
             }
-            */
-           
-            return tx.vout[v].nValue;
-        }
+        }  */
+        return tx.vout[v].nValue;
 	}
 	return(0);  // normal or non-token2 vout
 }
@@ -672,6 +690,9 @@ bool TokensValidate(struct CCcontract_info *cp, Eval* eval, const CTransaction &
     if (tx.vout.size() < 1)
         return eval->Invalid("no vouts");
 
+    if (std::count_if(tx.vout.begin(), tx.vout.end(), [](const CTxOut &v){ vuint8_t vd; return GetOpReturnData(v.scriptPubKey, vd); }) > 1)
+    	return eval->Invalid("only one opreturn supported");
+
     std::string errorStr;
     if (!TokensExactAmounts<TokensV1>(true, cp, eval, tx, errorStr)) 
     {
@@ -692,6 +713,7 @@ static bool report_validation_error(const std::string &func, Eval* eval, const C
 
 // checking creation txns is available with cryptocondition v2 mixed mode
 // therefore do not forget to check that the creation tx does not have cc inputs!
+/*
 static bool CheckTokensV2CreateTx(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx)
 {
     std::vector<CPubKey> vpksdummy;
@@ -705,27 +727,35 @@ static bool CheckTokensV2CreateTx(struct CCcontract_info *cp, Eval* eval, const 
     int32_t transferNum = 0;
     for(int32_t i = 0; i < tx.vout.size(); i ++)  
     {
-        if (tx.vout[i].scriptPubKey.IsPayToCryptoCondition())   
+        if (tx.vout[i].scriptPubKey.IsPayToCryptoCondition() && tx.vout[i].scriptPubKey.SpkHasEvalcodeCCV2(EVAL_TOKENSV2))   
         {
-            CScript opdrop;
-            if (GetCCDropAsOpret(tx.vout[i].scriptPubKey, opdrop))  
+            CScript opret;
+            bool isLastVoutOpret;
+            if (!(opret = GetCCDropAsOpret(tx.vout[v].scriptPubKey)).empty())
             {
-                uint8_t funcid = TokensV2::DecodeTokenOpRet(opdrop, tokenid, vpksdummy, oprets);
-                if (IsTokenCreateFuncid(funcid))    {
-                    createNum ++;
-                    if (createNum > 1)  
-                        return report_validation_error(__func__, eval, tx, "can't have more than 1 create vout"); 
-
-                    TokensV2::DecodeTokenCreateOpRet(opdrop, vorigpk, name, description, oprets);
-
-                    // check this is really creator
-                    CPubKey origpk = pubkey2pk(vorigpk);
-                    if (TotalPubkeyNormalInputs(tx, origpk) == 0)
-                        return report_validation_error(__func__, eval, tx, "no vins with creator pubkey"); 
-                }
-                else if(IsTokenTransferFuncid(funcid))
-                    transferNum ++;
+                isLastVoutOpret = false;    
             }
+            else
+            {
+                isLastVoutOpret = true;
+                opret = tx.vout.back().scriptPubKey;
+            }
+
+            uint8_t funcid = TokensV2::DecodeTokenOpRet(opret, tokenid, vpksdummy, oprets);
+            if (IsTokenCreateFuncid(funcid))    {
+                createNum ++;
+                if (createNum > 1)  
+                    return report_validation_error(__func__, eval, tx, "can't have more than 1 create vout"); 
+
+                TokensV2::DecodeTokenCreateOpRet(opret, vorigpk, name, description, oprets);
+
+                // check this is really creator
+                CPubKey origpk = pubkey2pk(vorigpk);
+                if (TotalPubkeyNormalInputs(eval, tx, origpk) == 0)
+                    return report_validation_error(__func__, eval, tx, "no vins with creator pubkey"); 
+            }
+            else if(IsTokenTransferFuncid(funcid))
+                transferNum ++;
         }
     }
     
@@ -741,7 +771,7 @@ static bool CheckTokensV2CreateTx(struct CCcontract_info *cp, Eval* eval, const 
 
             // check this is really creator
             CPubKey origpk = pubkey2pk(vorigpk);
-            if (TotalPubkeyNormalInputs(tx, origpk) == 0)
+            if (TotalPubkeyNormalInputs(eval, tx, origpk) == 0)
                 return report_validation_error(__func__, eval, tx, "no vins with creator pubkey"); 
             createNum ++;
         }
@@ -749,12 +779,15 @@ static bool CheckTokensV2CreateTx(struct CCcontract_info *cp, Eval* eval, const 
 
     // check that creation tx does not have my cc vins
     if (createNum > 0)  {
-        if (HasMyCCVin(cp, tx)) 
+        bool hasMyccvin = false;
+        std::for_each (tx.vin.begin(), tx.vin.end(), [&](const CTxIn &vin){ cp->ismyvin(vin.scriptSig) ? hasMyccvin = true : hasMyccvin = hasMyccvin; });
+        if (hasMyccvin) 
             return report_validation_error(__func__, eval, tx, "creation tx can't have token vins"); 
         return true;
     }
     return false;
 }
+*/
 
 // token 2 cc validation entry point
 bool Tokensv2Validate(struct CCcontract_info *cp, Eval* eval, const CTransaction &tx, uint32_t nIn) 
@@ -766,16 +799,22 @@ bool Tokensv2Validate(struct CCcontract_info *cp, Eval* eval, const CTransaction
     if (tx.vout.size() < 1) 
         return report_validation_error(__func__, eval, tx, "no vouts");
 
+    if (std::count_if(tx.vout.begin(), tx.vout.end(), [](const CTxOut &v){ vuint8_t vd; return GetOpReturnData(v.scriptPubKey, vd); }) > 1)
+    	return eval->Invalid("only one opreturn supported");
+
     std::string errorStr;
 
-    if (CheckTokensV2CreateTx(cp, eval, tx)) //found create tx and it is valid 
-        return true;
-    if (eval->state.IsInvalid())  // create tx is invalid
-        return false;
+    // these checks now are in TokensExactAmounts
+    //if (CheckTokensV2CreateTx(cp, eval, tx)) //found create tx and it is valid 
+    //    return true;
+    //if (eval->state.IsInvalid())  // create tx is invalid
+    //    return false;
 
-    // check 't' vouts (could have multiple tokenids)
+    // check token vouts (token txns could have multiple tokenids for multiple token transfer)
     if (!TokensExactAmounts<TokensV2>(true, cp, eval, tx, errorStr)) 
         return report_validation_error(__func__, eval, tx, errorStr); 
+
+    // disable many markers:
 
     return true; 
 }
@@ -832,13 +871,18 @@ UniValue TokenList()
         std::vector<uint8_t> origpubkey;
 	    std::string name, description;
 
-        if (myGetTransaction(txid, vintx, hashBlock) != 0) {
-            std::vector<vscript_t>  oprets;
-            if (vintx.vout.size() > 0 && DecodeTokenCreateOpRetV1(vintx.vout.back().scriptPubKey, origpubkey, name, description, oprets) != 0) {
-                result.push_back(txid.GetHex());
-            }
-            else {
-                LOGSTREAMFN(cctokens_log, CCLOG_DEBUG1, stream << "DecodeTokenCreateOpRetV1 failed for txid=" << txid.GetHex() <<std::endl);
+        if (myGetTransaction(txid, vintx, hashBlock) != false) 
+        {
+            LOCK(cs_main);
+            if (IsBlockHashInActiveChain(hashBlock))
+            {
+                std::vector<vscript_t>  oprets;
+                if (vintx.vout.size() > 0 && DecodeTokenCreateOpRetV1(vintx.vout.back().scriptPubKey, origpubkey, name, description, oprets) != 0) {
+                    result.push_back(txid.GetHex());
+                }
+                else {
+                    LOGSTREAMFN(cctokens_log, CCLOG_DEBUG1, stream << "DecodeTokenCreateOpRetV1 failed for txid=" << txid.GetHex() <<std::endl);
+                }
             }
         }
     };
@@ -869,9 +913,10 @@ UniValue TokenList()
     return CreateTokenLocal<TokensV2>(txfee, tokensupply, name, description, nonfungibleData);
 }*/
 
-UniValue TokenV2List()
+UniValue TokenV2List(int32_t beginHeight, int32_t endHeight)
 {
 	UniValue result(UniValue::VARR);
+    const bool CC_OUTPUTS_TRUE = true;
 
 	struct CCcontract_info *cp, C; 
 	cp = CCinit(&C, EVAL_TOKENSV2);
@@ -881,36 +926,65 @@ UniValue TokenV2List()
 	    std::string name, description;
         std::vector<vscript_t>  oprets;
 
-        if (DecodeTokenCreateOpRetV2(opreturn, origpubkey, name, description, oprets) != 0) {
-            result.push_back(tokenid.GetHex());
-        }
-        else {
-            LOGSTREAMFN(cctokens_log, CCLOG_DEBUG1, stream << "DecodeTokenCreateOpRetV2 failed for tokenid=" << tokenid.GetHex() << " opreturn.size=" << opreturn.size() << std::endl);
+        if (IsTxidInActiveChain(tokenid))
+        {
+            if (DecodeTokenCreateOpRetV2(opreturn, origpubkey, name, description, oprets) != 0) {
+                result.push_back(tokenid.GetHex());
+            }
+            else {
+                LOGSTREAMFN(cctokens_log, CCLOG_DEBUG1, stream << "DecodeTokenCreateOpRetV2 failed for tokenid=" << tokenid.GetHex() << " opreturn.size=" << opreturn.size() << std::endl);
+            }
         }
     };
 
-    if (fUnspentCCIndex)
-    {
-        std::vector<std::pair<CUnspentCCIndexKey, CUnspentCCIndexValue> > unspentOutputs;
-
-        SetCCunspentsCCIndex(unspentOutputs, cp->unspendableCCaddr, zeroid);    // find by burnable validated cc addr marker
-        LOGSTREAMFN(cctokens_log, CCLOG_DEBUG1, stream << "unspentOutputs.size()=" << unspentOutputs.size() << std::endl);
-        for (std::vector<std::pair<CUnspentCCIndexKey, CUnspentCCIndexValue> >::const_iterator it = unspentOutputs.begin(); it != unspentOutputs.end(); it++) {
-            addTokenId(it->first.creationid, it->second.opreturn);
-        }
+    if (beginHeight > 0)    {
+        if (endHeight <= 0)
+            endHeight = chainActive.Height();
+        std::vector<std::pair<CAddressIndexKey, CAmount>> addressIndexOutputs;
+        SetAddressIndexOutputs(addressIndexOutputs, cp->unspendableCCaddr, CC_OUTPUTS_TRUE, beginHeight, endHeight);
+        LOGSTREAMFN(cctokens_log, CCLOG_DEBUG1, stream << "SetAddressIndexOutputs addressIndexOutputs.size()=" << addressIndexOutputs.size() << std::endl);
+            for (const auto it : addressIndexOutputs) {
+                CTransaction creationtx;
+                uint256 hashBlock;
+                if (!it.first.spending &&
+                    myGetTransaction(it.first.txhash, creationtx, hashBlock) && creationtx.vout.size() > 0)
+                {
+                    LOCK(cs_main);
+                    if (IsBlockHashInActiveChain(hashBlock))
+                        addTokenId(it.first.txhash, creationtx.vout.back().scriptPubKey);    
+                }
+            }
     }
     else
     {
-        bool CC_INPUTS_TRUE = true;
-        std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs;
+        if (fUnspentCCIndex)
+        {
+            std::vector<std::pair<CUnspentCCIndexKey, CUnspentCCIndexValue> > unspentOutputs;
 
-        SetCCunspents(unspentOutputs, cp->unspendableCCaddr, CC_INPUTS_TRUE);
-        LOGSTREAMFN(cctokens_log, CCLOG_DEBUG1, stream << "unspentOutputs.size()=" << unspentOutputs.size() << std::endl);    
-        for (std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> >::const_iterator it = unspentOutputs.begin(); it != unspentOutputs.end(); it++) {
-            CTransaction creationtx;
-            uint256 hashBlock;
-            if (myGetTransaction(it->first.txhash, creationtx, hashBlock) && creationtx.vout.size() > 0)
-                addTokenId(it->first.txhash, creationtx.vout.back().scriptPubKey);    
+            SetCCunspentsCCIndex(unspentOutputs, cp->unspendableCCaddr, zeroid);    // find by burnable validated cc addr marker
+            LOGSTREAMFN(cctokens_log, CCLOG_DEBUG1, stream << "SetCCunspentsCCIndex unspentOutputs.size()=" << unspentOutputs.size() << std::endl);
+            for (const auto &it : unspentOutputs) {
+                LOCK(cs_main);
+                if (IsTxidInActiveChain(it.first.creationid))
+                    addTokenId(it.first.creationid, it.second.opreturn);
+            }
+        }
+        else
+        {
+            std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs;
+
+            SetCCunspents(unspentOutputs, cp->unspendableCCaddr, CC_OUTPUTS_TRUE);
+            LOGSTREAMFN(cctokens_log, CCLOG_DEBUG1, stream << "SetCCunspents unspentOutputs.size()=" << unspentOutputs.size() << std::endl);    
+            for (const auto it : unspentOutputs) {
+                CTransaction creationtx;
+                uint256 hashBlock;
+                if (myGetTransaction(it.first.txhash, creationtx, hashBlock) && creationtx.vout.size() > 0)
+                {
+                    LOCK(cs_main);
+                    if (IsBlockHashInActiveChain(hashBlock))
+                        addTokenId(it.first.txhash, creationtx.vout.back().scriptPubKey);    
+                }
+            }
         }
     }
 

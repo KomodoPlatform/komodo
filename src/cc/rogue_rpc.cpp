@@ -186,7 +186,7 @@ uint8_t rogue_highlanderopretdecode(uint256 &gametxid, uint256 &tokenid, int32_t
     else if ( script[1] != 'H' && script[1] != 'Q' && (f= DecodeTokenOpRetV1(scriptPubKey, tokenid, voutPubkeys, opretsDummy)) != 0 )
     {
         //fprintf(stderr,"decode opret %c tokenid.%s\n",script[1],tokenid.GetHex().c_str());
-        GetTokenData<TokensV1>(tokenid, tokenData, vopretNonfungible);  //load nonfungible data from the 'tokenbase' tx
+        GetTokenData<TokensV1>(NULL, tokenid, tokenData, vopretNonfungible);  //load nonfungible data from the 'tokenbase' tx
         vopret = vopretNonfungible;
     }
     if ( vopret.size() > 2 && E_UNMARSHAL(vopret, ss >> e; ss >> f; ss >> gametxid;  ss >> symbol; ss >> pname; ss >> regslot; ss >> pk; ss >> playerdata) != 0 && e == EVAL_ROGUE && (f == 'H' || f == 'Q') )

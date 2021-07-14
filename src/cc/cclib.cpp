@@ -426,7 +426,7 @@ bool CClibExactAmounts(struct CCcontract_info *cp,Eval* eval,const CTransaction 
 bool CClib_validate(struct CCcontract_info *cp,int32_t height,Eval *eval,const CTransaction tx,unsigned int nIn)
 {
     int32_t numvins,numvouts,preventCCvins,preventCCvouts,i,numblocks; bool retval; uint256 txid; uint8_t hash[32]; char str[65],destaddr[64];
-    std::vector<std::pair<CAddressIndexKey, CAmount> > txids;
+    std::vector<std::pair<CAddressIndexKey, CAmount> > addressIndexOutputs;
     if ( cp->evalcode != EVAL_FAUCET2 )
     {
 #ifdef BUILD_ROGUE
@@ -482,8 +482,8 @@ bool CClib_validate(struct CCcontract_info *cp,int32_t height,Eval *eval,const C
             else if ( (hash[0] & 0xff) != 0 || (hash[31] & 0xff) != 0 )
                 return eval->Invalid("invalid faucetget txid");
             Getscriptaddress(destaddr,tx.vout[i].scriptPubKey);
-            SetCCtxids(txids,destaddr,tx.vout[i].scriptPubKey.IsPayToCryptoCondition());
-            for (std::vector<std::pair<CAddressIndexKey, CAmount> >::const_iterator it=txids.begin(); it!=txids.end(); it++)
+            SetAddressIndexOutputs(addressIndexOutputs,destaddr,tx.vout[i].scriptPubKey.IsPayToCryptoCondition());
+            for (std::vector<std::pair<CAddressIndexKey, CAmount> >::const_iterator it=addressIndexOutputs.begin(); it!=addressIndexOutputs.end(); it++)
             {
                 //int height = it->first.blockHeight;
                 if ( CCduration(numblocks,it->first.txhash) > 0 && numblocks > 3 )
@@ -608,7 +608,7 @@ std::string CClib_rawtxgen(struct CCcontract_info *cp,uint8_t funcid,cJSON *para
         for (i=0; i<1000000; i++,j++)
         {
             tmpmtx = mtx;
-            rawhex = FinalizeCCTx(-1LL,cp,tmpmtx,mypk,txfee,CScript() << OP_RETURN << E_MARSHAL(ss << (uint8_t)EVAL_FAUCET2 << (uint8_t)'G' << j));
+            rawhex = FinalizeCCTx(0,cp,tmpmtx,mypk,txfee,CScript() << OP_RETURN << E_MARSHAL(ss << (uint8_t)EVAL_FAUCET2 << (uint8_t)'G' << j));
             if ( (len= (int32_t)rawhex.size()) > 0 && len < 65536 )
             {
                 len >>= 1;

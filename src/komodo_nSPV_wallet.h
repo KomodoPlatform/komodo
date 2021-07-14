@@ -493,42 +493,47 @@ void NSPV_utxos2CCunspents(struct NSPV_utxosresp *ptr,std::vector<std::pair<CAdd
     }
 }
 
-void NSPV_txids2CCtxids(struct NSPV_txidsresp *ptr,std::vector<std::pair<CAddressIndexKey, CAmount> > &txids)
+void NSPV_resp2indexOutputs(struct NSPV_txidsresp* ptr, std::vector<std::pair<CAddressIndexKey, CAmount>>& indexOutputs)
 {
-    CAddressIndexKey key; int64_t value; int32_t i,type; uint160 hashBytes; std::string addrstr(ptr->coinaddr);
-    if ( ptr->txids != NULL && ptr->numtxids > 0 )
-    {
+    if (!ptr->coinaddr)
+        return;
+
+    CAddressIndexKey key;
+    int64_t value;
+    int32_t i, type;
+    uint160 hashBytes;
+    std::string addrstr(ptr->coinaddr);
+
+    if (ptr->txids != NULL && ptr->numtxids > 0) {
         CBitcoinAddress address(addrstr);
-        if ( address.GetIndexKey(hashBytes, type, ptr->CCflag) == 0 )
-        {
-            fprintf(stderr,"couldnt get indexkey\n");
+        if (address.GetIndexKey(hashBytes, type, ptr->CCflag) == 0) {
+            fprintf(stderr, "couldnt get indexkey\n");
             return;
         }
-        for (i = 0; i < ptr->numtxids; i ++)
-        {
+        for (i = 0; i < ptr->numtxids; i++) {
             key.type = type;
             key.hashBytes = hashBytes;
             key.txhash = ptr->txids[i].txid;
             key.index = ptr->txids[i].vout;
             key.blockHeight = ptr->txids[i].height;
             value = ptr->txids[i].satoshis;
-            txids.push_back(std::make_pair(key, value));
+            indexOutputs.push_back(std::make_pair(key, value));
         }
     }
 }
 
-void NSPV_CCunspents(std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &outputs,char *coinaddr,bool ccflag)
+void NSPV_CCunspents(std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > &outputs, char *coinaddr, bool ccflag)
 {
     int32_t filter = 0;
     NSPV_addressutxos(coinaddr,ccflag,0,filter);
     NSPV_utxos2CCunspents(&NSPV_utxosresult,outputs);
 }
 
-void NSPV_CCtxids(std::vector<std::pair<CAddressIndexKey, CAmount> > &txids,char *coinaddr,bool ccflag)
+void NSPV_CCindexOutputs(std::vector<std::pair<CAddressIndexKey, CAmount>>& indexOutputs, char* coinaddr, bool ccflag)
 {
     int32_t filter = 0;
-    NSPV_addresstxids(coinaddr,ccflag,0,filter);
-    NSPV_txids2CCtxids(&NSPV_txidsresult,txids);
+    NSPV_addresstxids(coinaddr, ccflag, 0, filter);
+    NSPV_resp2indexOutputs(&NSPV_txidsresult, indexOutputs);
 }
 
 void NSPV_CCtxids(std::vector<uint256> &txids,char *coinaddr,bool ccflag, uint8_t evalcode,uint256 filtertxid, uint8_t func)

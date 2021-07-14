@@ -255,15 +255,15 @@ uint8_t games_registeropretdecode(uint256 &gametxid,uint256 &tokenid,uint256 &pl
 {
     std::string name, description; std::vector<uint8_t> vorigPubkey;
     std::vector<vscript_t> oprets;
-    std::vector<uint8_t> vopretNonfungible, vopret, vopretDummy,origpubkey;
+    std::vector<uint8_t> vextraData, vopret, vopretDummy,origpubkey;
     uint8_t f,*script; std::vector<CPubKey> voutPubkeys;
     tokenid = zeroid;
     GetOpReturnData(scriptPubKey, vopret);
     script = (uint8_t *)vopret.data();
     if ( script[1] == 'c' && (f= DecodeTokenCreateOpRetV1(scriptPubKey,origpubkey,name,description,oprets)) == 'c' )
     {
-        GetOpReturnCCBlob(oprets, vopretNonfungible);
-        vopret = vopretNonfungible;
+        GetOpReturnCCBlob(oprets, vextraData);
+        vopret = vextraData;
     }
     else if ( script[1] != 'R' && (f= DecodeTokenOpRetV1(scriptPubKey, tokenid, voutPubkeys, oprets)) != 0 )
     {
@@ -290,21 +290,21 @@ uint8_t games_finishopretdecode(uint256 &gametxid, uint256 &tokenid, int32_t &re
     std::string name, description; std::vector<uint8_t> vorigPubkey;
     std::vector<vscript_t>  oprets, opretsDummy;
     TokenDataTuple tokenData;
-    std::vector<uint8_t> vopretNonfungible, vopret, vopretDummy,origpubkey;
+    std::vector<uint8_t> vextraData, vopret, vopretDummy,origpubkey;
     uint8_t f,*script; std::vector<CPubKey> voutPubkeys;
     tokenid = zeroid;
     GetOpReturnData(scriptPubKey, vopret);
     script = (uint8_t *)vopret.data();
     if ( script[1] == 'c' && (f= DecodeTokenCreateOpRetV1(scriptPubKey,origpubkey,name,description, oprets)) == 'c' )
     {
-        GetOpReturnCCBlob(oprets, vopretNonfungible);
-        vopret = vopretNonfungible;
+        GetOpReturnCCBlob(oprets, vextraData);
+        vopret = vextraData;
     }
     else if ( script[1] != 'H' && script[1] != 'Q' && (f= DecodeTokenOpRetV1(scriptPubKey, tokenid, voutPubkeys, opretsDummy)) != 0 )
     {
         //fprintf(stderr,"decode opret %c tokenid.%s\n",script[1],tokenid.GetHex().c_str());
-        GetTokenData<TokensV1>(reftokenid, tokenData, vopretNonfungible);   //load nonfungible data from the 'tokenbase' tx
-        vopret = vopretNonfungible;
+        GetTokenData<TokensV1>(NULL, reftokenid, tokenData, vextraData);   //load nonfungible data from the 'tokenbase' tx
+        vopret = vextraData;
     }
     if ( vopret.size() > 2 && E_UNMARSHAL(vopret, ss >> e; ss >> f; ss >> gametxid;  ss >> symbol; ss >> pname; ss >> regslot; ss >> pk; ss >> playerdata) != 0 && e == EVAL_GAMES && (f == 'H' || f == 'Q') )
     {
@@ -1612,9 +1612,9 @@ UniValue games_finish(uint64_t txfee,struct CCcontract_info *cp,cJSON *params,ch
                         opret = games_finishopret(funcid, gametxid, regslot, mypk, newdata,pname);
                         char seedstr[32];
                         sprintf(seedstr,"%llu",(long long)seed);
-                        std::vector<uint8_t> vopretNonfungible;
-                        GetOpReturnData(opret, vopretNonfungible);
-                        rawtx = FinalizeCCTx(0, cp, mtx, mypk, txfee, EncodeTokenCreateOpRet('c', Mypubkey(), std::string(seedstr), gametxid.GetHex(), vopretNonfungible));
+                        std::vector<uint8_t> vextraData;
+                        GetOpReturnData(opret, vextraData);
+                        rawtx = FinalizeCCTx(0, cp, mtx, mypk, txfee, EncodeTokenCreateOpRet('c', Mypubkey(), std::string(seedstr), gametxid.GetHex(), vextraData));
                     }
                     memset(mypriv,0,sizeof(mypriv));
                     return(games_rawtxresult(result,rawtx,1));

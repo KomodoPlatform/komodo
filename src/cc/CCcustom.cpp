@@ -31,7 +31,7 @@
 #include "CCGateways.h"
 #include "CCtokens.h"
 #include "CCImportGateway.h"
-#include "CCNFTData.h"
+#include "CCTokelData.h"
 
 
 /*
@@ -276,9 +276,9 @@ uint8_t Assetsv2CCpriv[32] = { 0x46, 0x58, 0x3b, 0x18, 0xee, 0x16, 0x63, 0x51, 0
 #undef FUNCNAME
 #undef EVALCODE
 
-// ParamNFT 
-#define FUNCNAME IsNFTDataInput
-#define EVALCODE EVAL_NFTDATA
+// Tokel TokenData validator 
+#define FUNCNAME IsTokelDataInput
+#define EVALCODE EVAL_TOKELDATA
 #include "CCcustom.inc"
 #undef FUNCNAME
 #undef EVALCODE
@@ -484,9 +484,9 @@ struct CCcontract_info *CCinit(struct CCcontract_info *cp, uint8_t evalcode)
             cp->ismyvin = IsAssetsv2Input;
             break;
 
-        case EVAL_NFTDATA:
-            cp->validate = NFTDataValidate;
-            cp->ismyvin = IsNFTDataInput;
+        case EVAL_TOKELDATA:
+            cp->validate = TokelDataValidate;
+            cp->ismyvin = IsTokelDataInput;
             break;
 
         default:

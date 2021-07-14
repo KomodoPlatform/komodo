@@ -38,6 +38,7 @@
 #include "script/interpreter.h"
 #include "zcash/zip32.h"
 #include "notaries_staked.h"
+#include "sync_ext.h"
 
 #include "utiltime.h"
 #include "asyncrpcoperation.h"
@@ -190,7 +191,7 @@ char *komodo_chainname()
      return(ASSETCHAINS_SYMBOL[0] == 0 ? (char *)"KMD" : ASSETCHAINS_SYMBOL);
 }
 
-void OS_randombytes(unsigned char *x,long xlen);
+// void OS_randombytes(unsigned char *x,long xlen);
 
 UniValue getnewaddress(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
@@ -6728,144 +6729,148 @@ UniValue gatewaysprocessed(const UniValue& params, bool fHelp, const CPubKey& my
 
 UniValue oracleslist(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    if ( fHelp || params.size() > 0 )
+    if (fHelp || params.size() > 0)
         throw runtime_error("oracleslist\n");
-    if ( ensure_CCrequirements(EVAL_ORACLES) < 0 )
+    if (ensure_CCrequirements(EVAL_ORACLES) < 0)
         throw runtime_error(CC_REQUIREMENTS_MSG);
-    return(OraclesList());
+    return (OraclesList());
 }
 
 UniValue oraclesinfo(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
     uint256 txid;
-    if ( fHelp || params.size() != 1 )
+    if (fHelp || params.size() != 1)
         throw runtime_error("oraclesinfo oracletxid\n");
-    if ( ensure_CCrequirements(EVAL_ORACLES) < 0 )
+    if (ensure_CCrequirements(EVAL_ORACLES) < 0)
         throw runtime_error(CC_REQUIREMENTS_MSG);
-    txid = Parseuint256((char *)params[0].get_str().c_str());
-    return(OracleInfo(txid));
+    txid = Parseuint256((char*)params[0].get_str().c_str());
+    return (OracleInfo(txid));
 }
 
 UniValue oraclesfund(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    UniValue result(UniValue::VOBJ); uint256 txid;
-    if ( fHelp || params.size() != 1 )
+    UniValue result(UniValue::VOBJ);
+    uint256 txid;
+    if (fHelp || params.size() != 1)
         throw runtime_error("oraclesfund oracletxid\n");
-    if ( ensure_CCrequirements(EVAL_ORACLES) < 0 )
+    if (ensure_CCrequirements(EVAL_ORACLES) < 0)
         throw runtime_error(CC_REQUIREMENTS_MSG);
-    Lock2NSPV(mypk);
-    txid = Parseuint256((char *)params[0].get_str().c_str());
-    result = OracleFund(mypk,0,txid);
-    if ( result[JSON_HEXTX].getValStr().size() > 0  )
-    {
+    CONDITIONAL_LOCK2(cs_main, pwalletMain->cs_wallet, !mypk.IsValid());  // dont lock wallet for nspv calls
+    txid = Parseuint256((char*)params[0].get_str().c_str());
+    result = OracleFund(mypk, 0, txid);
+    if (result[JSON_HEXTX].getValStr().size() > 0) {
         result.push_back(Pair("result", "success"));
     }
-    Unlock2NSPV(mypk);
-    return(result);
+    return (result);
 }
 
 UniValue oraclesregister(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    UniValue result(UniValue::VOBJ); uint256 txid; int64_t datafee;
-    if ( fHelp || params.size() != 2 )
-        throw runtime_error("oraclesregister oracletxid datafee\n");
-    if ( ensure_CCrequirements(EVAL_ORACLES) < 0 )
+    UniValue result(UniValue::VOBJ);
+    uint256 txid;
+    if (fHelp || params.size() != 2)
+        throw runtime_error("oraclesregister oracletxid datafee\n"
+                            " datafee in satoshis");
+    if (ensure_CCrequirements(EVAL_ORACLES) < 0)
         throw runtime_error(CC_REQUIREMENTS_MSG);
-    Lock2NSPV(mypk);
-    txid = Parseuint256((char *)params[0].get_str().c_str());
-    if ( (datafee= atol((char *)params[1].get_str().c_str())) == 0 )
-        datafee = atof((char *)params[1].get_str().c_str()) * COIN + 0.00000000499999;
-    result = OracleRegister(mypk,0,txid,datafee);
-    if ( result[JSON_HEXTX].getValStr().size() > 0  )
-    {
+    CONDITIONAL_LOCK2(cs_main, pwalletMain->cs_wallet, !mypk.IsValid());  // dont lock wallet for nspv calls
+    txid = Parseuint256((char*)params[0].get_str().c_str());
+    CAmount datafee = atoll((char *)params[1].get_str().c_str());
+    result = OracleRegister(mypk, 0, txid, datafee);
+    if (result[JSON_HEXTX].getValStr().size() > 0) {
         result.push_back(Pair("result", "success"));
     }
-    Unlock2NSPV(mypk);
-    return(result);
+    return (result);
 }
 
 UniValue oraclessubscribe(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    UniValue result(UniValue::VOBJ); uint256 txid; int64_t amount; std::vector<unsigned char> pubkey;
-    if ( fHelp || params.size() != 3 )
+    UniValue result(UniValue::VOBJ);
+    uint256 txid;
+    std::vector<unsigned char> pubkey;
+
+    if (fHelp || params.size() != 3)
         throw runtime_error("oraclessubscribe oracletxid publisher amount\n");
-    if ( ensure_CCrequirements(EVAL_ORACLES) < 0 )
+    if (ensure_CCrequirements(EVAL_ORACLES) < 0)
         throw runtime_error(CC_REQUIREMENTS_MSG);
-    Lock2NSPV(mypk);
-    txid = Parseuint256((char *)params[0].get_str().c_str());
+    CONDITIONAL_LOCK2(cs_main, pwalletMain->cs_wallet, !mypk.IsValid());  // dont lock wallet for nspv calls
+    txid = Parseuint256((char*)params[0].get_str().c_str());
     pubkey = ParseHex(params[1].get_str().c_str());
-    amount = atof((char *)params[2].get_str().c_str()) * COIN + 0.00000000499999;
-    result = OracleSubscribe(mypk,0,txid,pubkey2pk(pubkey),amount);
-    if ( result[JSON_HEXTX].getValStr().size() > 0  )
-    {
+    CAmount amount = AmountFromValue(params[2]);
+    result = OracleSubscribe(mypk, 0, txid, pubkey2pk(pubkey), amount);
+    if (result[JSON_HEXTX].getValStr().size() > 0) {
         result.push_back(Pair("result", "success"));
     }
-    Unlock2NSPV(mypk);
-    return(result);
+    return (result);
 }
 
 UniValue oraclessample(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    UniValue result(UniValue::VOBJ); uint256 oracletxid,txid; int32_t num; char *batonaddr;
-    if ( fHelp || params.size() != 2 )
+    UniValue result(UniValue::VOBJ);
+    uint256 oracletxid, txid;
+    int32_t num;
+    char* batonaddr;
+    if (fHelp || params.size() != 2)
         throw runtime_error("oraclessample oracletxid txid\n");
-    if ( ensure_CCrequirements(EVAL_ORACLES) < 0 )
+    if (ensure_CCrequirements(EVAL_ORACLES) < 0)
         throw runtime_error(CC_REQUIREMENTS_MSG);
-    oracletxid = Parseuint256((char *)params[0].get_str().c_str());
-    txid = Parseuint256((char *)params[1].get_str().c_str());
-    return(OracleDataSample(oracletxid,txid));
+    oracletxid = Parseuint256((char*)params[0].get_str().c_str());
+    txid = Parseuint256((char*)params[1].get_str().c_str());
+    return (OracleDataSample(oracletxid, txid));
 }
 
 UniValue oraclessamples(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    UniValue result(UniValue::VOBJ); uint256 txid; int32_t num; char *batonaddr;
-    if ( fHelp || params.size() != 3 )
+    UniValue result(UniValue::VOBJ);
+    uint256 txid;
+    int32_t num;
+    char* batonaddr;
+    if (fHelp || params.size() != 3)
         throw runtime_error("oraclessamples oracletxid batonaddress num\n");
-    if ( ensure_CCrequirements(EVAL_ORACLES) < 0 )
+    if (ensure_CCrequirements(EVAL_ORACLES) < 0)
         throw runtime_error(CC_REQUIREMENTS_MSG);
-    txid = Parseuint256((char *)params[0].get_str().c_str());
-    batonaddr = (char *)params[1].get_str().c_str();
-    num = atoi((char *)params[2].get_str().c_str());
-    return(OracleDataSamples(txid,batonaddr,num));
+    txid = Parseuint256((char*)params[0].get_str().c_str());
+    batonaddr = (char*)params[1].get_str().c_str();
+    num = atoi((char*)params[2].get_str().c_str());
+    return (OracleDataSamples(txid, batonaddr, num));
 }
 
 UniValue oraclesdata(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    UniValue result(UniValue::VOBJ); uint256 txid; std::vector<unsigned char> data;
-    if ( fHelp || params.size() != 2 )
+    UniValue result(UniValue::VOBJ);
+    uint256 txid;
+    std::vector<unsigned char> data;
+    if (fHelp || params.size() != 2)
         throw runtime_error("oraclesdata oracletxid hexstr\n");
-    if ( ensure_CCrequirements(EVAL_ORACLES) < 0 )
+    if (ensure_CCrequirements(EVAL_ORACLES) < 0)
         throw runtime_error(CC_REQUIREMENTS_MSG);
-    Lock2NSPV(mypk);
-    txid = Parseuint256((char *)params[0].get_str().c_str());
+    CONDITIONAL_LOCK2(cs_main, pwalletMain->cs_wallet, !mypk.IsValid());  // dont lock wallet for nspv calls
+    txid = Parseuint256((char*)params[0].get_str().c_str());
     data = ParseHex(params[1].get_str().c_str());
-    result = OracleData(mypk,0,txid,data);
-    if ( result[JSON_HEXTX].getValStr().size() > 0  )
-    {
+    result = OracleData(mypk, 0, txid, data);
+    if (result[JSON_HEXTX].getValStr().size() > 0) {
         result.push_back(Pair("result", "success"));
     }
-    Unlock2NSPV(mypk);
-    return(result);
+    return (result);
 }
 
 UniValue oraclescreate(const UniValue& params, bool fHelp, const CPubKey& mypk)
 {
-    UniValue result(UniValue::VOBJ); std::string name,description,format;
-    if ( fHelp || params.size() != 3 )
+    UniValue result(UniValue::VOBJ);
+    std::string name, description, format;
+    if (fHelp || params.size() != 3)
         throw runtime_error("oraclescreate name description format\n");
-    if ( ensure_CCrequirements(EVAL_ORACLES) < 0 )
+    if (ensure_CCrequirements(EVAL_ORACLES) < 0)
         throw runtime_error(CC_REQUIREMENTS_MSG);
-    Lock2NSPV(mypk);
+    CONDITIONAL_LOCK2(cs_main, pwalletMain->cs_wallet, !mypk.IsValid());  // dont lock wallet for nspv calls
     name = params[0].get_str();
     description = params[1].get_str();
     format = params[2].get_str();
-    result = OracleCreate(mypk,0,name,description,format);
-    if ( result[JSON_HEXTX].getValStr().size() > 0  )
-    {
+    result = OracleCreate(mypk, 0, name, description, format);
+    if (result[JSON_HEXTX].getValStr().size() > 0) {
         result.push_back(Pair("result", "success"));
     }
-    Unlock2NSPV(mypk);
-    return(result);
+    return (result);
 }
 
 UniValue FSMcreate(const UniValue& params, bool fHelp, const CPubKey& mypk)

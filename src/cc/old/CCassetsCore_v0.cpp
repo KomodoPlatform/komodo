@@ -389,11 +389,11 @@ bool GetAssetorigaddrs(struct CCcontract_info *cp, char *origCCaddr, char *origN
 
 	if (vintxFuncId == 's' || vintxFuncId == 'S') {
 		// bGetCCaddr = GetCCaddress(cpTokens, origCCaddr, pubkey2pk(origpubkey));  
-        cpTokens->evalcodeNFT = cp->evalcodeNFT;  // add non-fungible if present
+        cpTokens->evalcodeAdd = cp->evalcodeAdd;  // add non-fungible if present
         bGetCCaddr = GetTokensCCaddress(cpTokens, origCCaddr, pubkey2pk(origpubkey));  // tokens to single-eval token or token+nonfungible
 	}
 	else if (vintxFuncId == 'b' || vintxFuncId == 'B') {
-        cpTokens->evalcodeNFT = cp->evalcodeNFT;  // add non-fungible if present
+        cpTokens->evalcodeAdd = cp->evalcodeAdd;  // add non-fungible if present
         bGetCCaddr = GetTokensCCaddress(cpTokens, origCCaddr, pubkey2pk(origpubkey));  // tokens to single-eval token or token+nonfungible
 	}
 	else  {
@@ -625,7 +625,7 @@ bool AssetCalcAmounts(struct CCcontract_info *cpAssets, int64_t &inputs, int64_t
 				std::vector<CPubKey> vinPubkeysEmpty;
 
 				// TODO: maybe we do not need call to IsTokensVout here, cause we've already selected token vins
-				assetoshis = IsTokensvout(false, false, cpTokens, NULL, vinTx, tx.vin[i].prevout.n, assetid);
+				assetoshis = IsTokensvout(false, false, cpTokens, eval, vinTx, tx.vin[i].prevout.n, assetid);
 				if (assetoshis != 0)
 				{
 					//std::cerr << "AssetCalcAmounts() vin i=" << i << " assetoshis=" << assetoshis << std::endl;

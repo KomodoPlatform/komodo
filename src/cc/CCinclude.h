@@ -87,6 +87,8 @@ Details.
 #define CCENABLE(x) ASSETCHAINS_CCDISABLES[((uint8_t)x)] = 0
 #define bits256_nonz(a) (((a).ulongs[0] | (a).ulongs[1] | (a).ulongs[2] | (a).ulongs[3]) != 0)
 
+#define ASSETS_NORMAL_DUST 500
+
 #define MAY2020_NNELECTION_HARDFORK 1592146800 //(Sunday, June 14th, 2020 03:00:00 PM UTC) 
 #define JUNE2021_NNELECTION_HARDFORK 1623682800 // dPoW Season 5 Monday, June 14th, 2021 (03:00:00 PM UTC)
 
@@ -230,8 +232,8 @@ struct CCVintxProbe {
 struct CCcontract_info
 {
     uint8_t evalcode;  //!< cc contract eval code, set by CCinit function
-    uint8_t evalcodeNFT;  //!< additional eval code for spending from three-eval-code vouts with EVAL_TOKENS, cc evalcode, cc evalcode NFT 
-                                        //!< or vouts with two evalcodes: EVAL_TOKENS, evalcodeNFT. 
+    uint8_t evalcodeAdd;  //!< additional eval code for spending from three-eval-code vouts with EVAL_TOKENS, cc evalcode, cc evalcode NFT 
+                                        //!< or vouts with two evalcodes: EVAL_TOKENS, evalcodeAdd. 
                                         //!< Set by AddTokenCCInputs function
 
     char unspendableCCaddr[64]; //!< global contract cryptocondition address, set by CCinit function
@@ -291,7 +293,7 @@ struct CCcontract_info
     void init_to_zeros() {
         // init to zeros:
         evalcode = 0;
-        evalcodeNFT = 0;
+        evalcodeAdd = 0;
 
         memset(CCpriv, '\0', sizeof(CCpriv) / sizeof(CCpriv[0]));
 
@@ -866,11 +868,14 @@ CPubKey check_signing_pubkey(CScript scriptSig);
 bool SignTx(CMutableTransaction &mtx,int32_t vini,int64_t utxovalue,const CScript scriptPubKey);
 
 extern std::vector<CPubKey> NULL_pubkeys; //!< constant value for use in functions where such value might be passed @see FinalizeCCTx
-#define FINALIZECCTX_NO_CHANGE 0x1
+
+#define FINALIZECCTX_ALWAYS_CHANGE       0x0
+#define FINALIZECCTX_NO_CHANGE           0x1
 #define FINALIZECCTX_NO_CHANGE_WHEN_ZERO 0x2
+#define FINALIZECCTX_NO_CHANGE_WHEN_DUST 0x4
 
 /// overload old-style FinalizeCCTx for compatibility
-/// @param skipmask parameter is not used
+/// @param changeFlag whether or not add normal change. Default 0 is always add change even 0
 /// @param cp contract info structure with cc eval code, module's global address and privkey. It also could have a vector of probe cryptoconditions created by CCAddVintxCond
 /// @param mtx prepared transaction to sign
 /// @param mypk my pubkey to sign
@@ -878,7 +883,7 @@ extern std::vector<CPubKey> NULL_pubkeys; //!< constant value for use in functio
 /// @param opret opreturn vout which function will add if it is not empty 
 /// @param pubkeys array of pubkeys to make multiple probe 1of2 cc's with the call Make1of2cond(cp->evalcode, globalpk, pubkeys[i])
 /// @returns signed transaction in hex encoding
-std::string FinalizeCCTx(uint64_t skipmask,struct CCcontract_info *cp,CMutableTransaction &mtx,CPubKey mypk,uint64_t txfee,CScript opret,std::vector<CPubKey> pubkeys = NULL_pubkeys);
+std::string FinalizeCCTx(uint32_t changeFlag,struct CCcontract_info *cp,CMutableTransaction &mtx,CPubKey mypk,uint64_t txfee,CScript opret,std::vector<CPubKey> pubkeys = NULL_pubkeys);
 
 /// FinalizeCCTx is a very useful function that will properly sign both CC and normal inputs, adds normal change and might add an opreturn output.
 /// This allows for Antara module transaction creation rpc functions to create an CMutableTransaction object, add the appropriate vins and vouts to it and use FinalizeCCTx to properly sign the transaction.
@@ -890,7 +895,7 @@ std::string FinalizeCCTx(uint64_t skipmask,struct CCcontract_info *cp,CMutableTr
 /// For a set of 1of2 cc with pairs of module globalpk and some other pk, spending with global pk, pass a vector with pubkeys as 'pubkeys' parameter.
 /// For any other cc case use CCAddVintxCond function to add any possible probe cryptoconditions to the cp opbject.
 /// @param remote true if the caller is in remote nspv mode
-/// @param skipmask parameter is not used
+/// @param changeFlag whether or not add normal change. Default 0 is always add change even 0
 /// @param cp contract info structure with cc eval code, module's global address and privkey. It also could have a vector of probe cryptoconditions created by CCAddVintxCond
 /// @param mtx prepared transaction to sign
 /// @param mypk my pubkey to sign
@@ -898,11 +903,11 @@ std::string FinalizeCCTx(uint64_t skipmask,struct CCcontract_info *cp,CMutableTr
 /// @param opret opreturn vout which function will add if it is not empty 
 /// @param pubkeys array of pubkeys to make multiple probe 1of2 cc's with the call Make1of2cond(cp->evalcode, globalpk, pubkeys[i])
 /// @returns signed transaction in hex encoding
-UniValue FinalizeCCTxExt(bool remote, uint64_t skipmask, struct CCcontract_info *cp, CMutableTransaction &mtx, CPubKey mypk, uint64_t txfee, CScript opret, std::vector<CPubKey> pubkeys = NULL_pubkeys);
+UniValue FinalizeCCTxExt(bool remote, uint32_t changeFlag, struct CCcontract_info *cp, CMutableTransaction &mtx, CPubKey mypk, uint64_t txfee, CScript opret, std::vector<CPubKey> pubkeys = NULL_pubkeys);
 
 /// version FinalizeCCTx for CC v2, for params @see FinalizeCCTxExt
 /// @returns signed transaction in hex and optional PartiallySigned univalue object with vin indexes and partially signed conditions (if signature threshold not reached)
-UniValue FinalizeCCV2Tx(bool remote, uint64_t mask, struct CCcontract_info *cp, CMutableTransaction &mtx, CPubKey mypk, uint64_t txfee, CScript opret);
+UniValue FinalizeCCV2Tx(bool remote, uint32_t changeFlag, struct CCcontract_info *cp, CMutableTransaction &mtx, CPubKey mypk, uint64_t txfee, CScript opret);
 
 /// Add signature to multisig scriptSig
 /// @param mtx mutable tx with multisig cc vins
@@ -941,13 +946,15 @@ void SetCCunspentsCCIndex(std::vector<std::pair<CUnspentCCIndexKey, CUnspentCCIn
 /// @param creationId txid of cc instance creation tx, might be empty to return all txns on coinaddr 
 void AddCCunspentsCCIndexMempool(std::vector<std::pair<CUnspentCCIndexKey, CUnspentCCIndexValue> > &unspentOutputs, const char *coinaddr, uint256 creationId);
 
-/// SetCCtxids returns a vector of all outputs on an address
+/// SetAddressIndexOutputs searches address index for a vector of outputs on an address
 /// @param[out] addressIndex vector of pairs of address index key and amount
 /// @param coinaddr address where the unspent outputs are searched
 /// @param CCflag if true the function searches for cc outputs, otherwise for normal outputs
-void SetCCtxids(std::vector<std::pair<CAddressIndexKey, CAmount> > &addressIndex,char *coinaddr,bool CCflag = true);
+/// @param beginHeight if beginHeight and endHeight positive the function searches for cc outputs starting from this height
+/// @param endHeight if beginHeight and endHeight  positive the function searches for cc outputs till this height
+void SetAddressIndexOutputs(std::vector<std::pair<CAddressIndexKey, CAmount>>& addressIndex, char* coinaddr, bool ccflag, int32_t beginHeight = 0, int32_t endHeight = 0);
 
-/// overloaded SetCCtxids returns a vector of filtered txids which have outputs on an address
+/// SetCCtxids searches address index for a vector of filtered txids which have outputs on an address
 /// @param[out] txids returned vector of txids
 /// @param coinaddr address where the unspent outputs are searched
 /// @param ccflag if true the function searches for cc outputs, otherwise for normal outputs
@@ -974,7 +981,7 @@ int64_t NSPV_AddNormalinputs(CMutableTransaction &mtx,CPubKey mypk,int64_t total
 /// @returns amount of added normal inputs or amount of all normal inputs in the wallet
 /// @see AddNormalinputsLocal
 /// @see AddNormalinputsRemote
-int64_t AddNormalinputs(CMutableTransaction &mtx,CPubKey mypk,int64_t total,int32_t maxinputs, bool remote=false);
+CAmount AddNormalinputs(CMutableTransaction &mtx, CPubKey mypk, CAmount total, int32_t maxinputs, bool remote=false);
 
 /// Local version for cc runnnig on the same node, adds normal (not cc) inputs to the transaction object vin array for the specified total amount using available utxos in the wallet, to fund the transaction
 /// @param mtx mutable transaction object
@@ -982,7 +989,7 @@ int64_t AddNormalinputs(CMutableTransaction &mtx,CPubKey mypk,int64_t total,int3
 /// @param total amount of inputs to add. If total equals to 0 the function does not add inputs but returns amount of all available normal inputs in the wallet
 /// @param maxinputs maximum number of inputs to add
 /// @returns amount of added normal inputs or amount of all normal inputs in the wallet
-int64_t AddNormalinputsLocal(CMutableTransaction &mtx,CPubKey mypk,int64_t total,int32_t maxinputs);
+CAmount AddNormalinputsLocal(CMutableTransaction &mtx, CPubKey mypk, CAmount total,int32_t maxinputs);
 
 /// AddNormalinputs2 adds normal (not cc) inputs to the transaction object vin array for the specified total amount using utxos on my pubkey's TX_PUBKEY address (my pubkey is set by -pubkey command line parameter), to fund the transaction.
 /// 'My pubkey' is the -pubkey parameter of komodod.
@@ -990,7 +997,7 @@ int64_t AddNormalinputsLocal(CMutableTransaction &mtx,CPubKey mypk,int64_t total
 /// @param total amount of inputs to add. If total equals to 0 the function does not add inputs but returns amount of all available normal inputs in the wallet
 /// @param maxinputs maximum number of inputs to add
 /// @returns amount of added normal inputs or amount of all normal inputs on my pubkey's address
-int64_t AddNormalinputs2(CMutableTransaction &mtx,int64_t total,int32_t maxinputs);
+CAmount AddNormalinputs2(CMutableTransaction &mtx, CAmount total, int32_t maxinputs);
 
 /// Remote version, does not use local wallet, adds normal (not cc) inputs to the transaction object vin array for the specified total amount using available utxos on mypk, to fund the transaction
 /// @param mtx mutable transaction object
@@ -998,7 +1005,7 @@ int64_t AddNormalinputs2(CMutableTransaction &mtx,int64_t total,int32_t maxinput
 /// @param total amount of inputs to add. If total equals to 0 the function does not add inputs but returns amount of all available normal inputs in the wallet
 /// @param maxinputs maximum number of inputs to add
 /// @returns amount of added normal inputs or amount of all normal inputs in the wallet
-int64_t AddNormalinputsRemote(CMutableTransaction &mtx, CPubKey mypk, int64_t total, int32_t maxinputs, bool mempool = false);
+CAmount AddNormalinputsRemote(CMutableTransaction &mtx, CPubKey mypk, CAmount total, int32_t maxinputs, bool mempool = false);
 
 /// CCutxovalue returns amount of an utxo. The function does this without loading the utxo transaction, by using address index only
 /// @param coinaddr address where the utxo is searched
@@ -1009,7 +1016,7 @@ int64_t AddNormalinputsRemote(CMutableTransaction &mtx, CPubKey mypk, int64_t to
 int64_t CCutxovalue(char *coinaddr,uint256 utxotxid,int32_t utxovout,int32_t CCflag);
 
 /// @private
-int32_t CC_vinselect(int32_t *aboveip, int64_t *abovep, int32_t *belowip, int64_t *belowp, struct CC_utxo utxos[], int32_t numunspents, int64_t value);
+int32_t CC_vinselect(int32_t *aboveip, CAmount *abovep, int32_t *belowip, CAmount *belowp, struct CC_utxo utxos[], int32_t numunspents, CAmount value);
 
 /// @private
 void CCAddVintxCond(struct CCcontract_info *cp, const CCwrapper &condWrapped, const uint8_t *priv = NULL);
@@ -1027,7 +1034,7 @@ int32_t oracleprice_add(std::vector<struct oracleprice_info> &publishers,CPubKey
 UniValue OracleFormat(uint8_t *data,int32_t datalen,char *format,int32_t formatlen);
 
 /// @private
-bool GetCCDropAsOpret(const CScript &scriptPubKey, CScript &opret);
+CScript GetCCDropAsOpret(const CScript &scriptPubKey);
 
 /*! \cond INTERNAL */
 // curve25519 and sha256
@@ -1040,8 +1047,8 @@ bits256 bits256_doublesha256(char *deprecated,uint8_t *data,int32_t datalen);
 /*! \endcond */
 
 /*! \cond INTERNAL */
-int64_t TotalPubkeyNormalInputs(const CTransaction &tx, const CPubKey &pubkey);
-int64_t TotalPubkeyCCInputs(const CTransaction &tx, const CPubKey &pubkey);
+CAmount TotalPubkeyNormalInputs(Eval *eval, const CTransaction &tx, const CPubKey &pubkey);
+CAmount TotalPubkeyCCInputs(Eval *eval, const CTransaction &tx, const CPubKey &pubkey);
 inline std::string STR_TOLOWER(const std::string &str) { std::string out; for (std::string::const_iterator i = str.begin(); i != str.end(); i++) out += std::tolower(*i); return out; }
 /*! \endcond */
 
@@ -1094,6 +1101,15 @@ void AddSigData2UniValue(UniValue &result, int32_t vini, UniValue& ccjson, std::
 /// @param evalcode eval code for cc module
 /// @returns 0 if okay or -1
 int32_t ensure_CCrequirements(uint8_t evalcode);
+
+/// returns true if tx is in active chain
+/// @param txid txid of tx to check
+bool IsTxidInActiveChain(uint256 txid);
+
+/// returns true if block hash is in active chain
+/// @param hashBlock hash of block to check
+bool IsBlockHashInActiveChain(uint256 hashBlock);
+
 
 extern bool fUnspentCCIndex;  // if unspent cc index enabled
 
@@ -1193,7 +1209,7 @@ void CCLogPrintStream(const char *category, int level, const char *functionName,
 
     stream << (category ? category : "") << " ";
     if (functionName != NULL)
-        stream << functionName << " ";
+        stream << functionName << "() ";
     if (level < 0)
         stream << "ERROR:" << " ";
     print_to_stream(stream);
@@ -1217,6 +1233,13 @@ void CCLogPrintStream(const char *category, int level, const char *functionName,
 /// @see LOGSTREAM
 #define LOGSTREAMFN(category, level, logoperator) CCLogPrintStream( category, level, __func__, [&](std::ostringstream &stream) {logoperator;} )
 
+extern struct CCcontract_info CCinfos[];
+extern std::string MYCCLIBNAME;
+bool CClib_validate(struct CCcontract_info *cp,int32_t height,Eval *eval,const CTransaction tx,unsigned int nIn);
+
+/// class CCERROR to replace old single threaded CCerror global var
+/// CCERROR is instanciated as thread_local and allows safely set error in cc rpc calls
+/// Note: we cannot use std::string as the 'message' member as it would fail in thread_local mode
 class CCERROR {
 private:
     void init()  {

@@ -20,6 +20,7 @@
 #include "CCinclude.h"
 #include "CCtokens.h"
 #include "komodo_structs.h"
+#include "komodo_defs.h"
 #include "key_io.h"
 
 
@@ -282,7 +283,7 @@ bool GetCCParams(Eval* eval, const CTransaction &tx, uint32_t nIn,
 {
     uint256 blockHash;
 
-    if (myGetTransaction(tx.vin[nIn].prevout.hash, txOut, blockHash) && txOut.vout.size() > tx.vin[nIn].prevout.n)
+    if (eval->GetTxUnconfirmed(tx.vin[nIn].prevout.hash, txOut, blockHash) && txOut.vout.size() > tx.vin[nIn].prevout.n)
     {
         CBlockIndex index;
         if (eval->GetBlock(blockHash, index))
@@ -439,7 +440,7 @@ bool GetTokensCCaddress(struct CCcontract_info *cp, char *destaddr, CPubKey pk, 
 	destaddr[0] = 0;
 	if (pk.size() == 0)
 		pk = GetUnspendable(cp, 0);
-	return(_GetTokensCCaddress(destaddr, cp->evalcode, cp->evalcodeNFT, pk, mixed));
+	return(_GetTokensCCaddress(destaddr, cp->evalcode, cp->evalcodeAdd, pk, mixed));
 }
 
 bool GetCCaddress1of2(struct CCcontract_info *cp,char *destaddr,CPubKey pk,CPubKey pk2, bool mixed)
@@ -458,12 +459,12 @@ bool GetTokensCCaddress1of2(struct CCcontract_info *cp, char *destaddr, CPubKey 
 {
 	CCwrapper payoutCond;
     if (!mixed)
-        payoutCond.reset(MakeTokensCCcond1of2(cp->evalcode, cp->evalcodeNFT, pk1, pk2));
+        payoutCond.reset(MakeTokensCCcond1of2(cp->evalcode, cp->evalcodeAdd, pk1, pk2));
     else
-        payoutCond.reset(MakeTokensv2CCcond1of2(cp->evalcode, cp->evalcodeNFT, pk1, pk2));
+        payoutCond.reset(MakeTokensv2CCcond1of2(cp->evalcode, cp->evalcodeAdd, pk1, pk2));
 
 	destaddr[0] = 0;
-	if (payoutCond != nullptr)  //  if evalcodeNFT not set then it is dual-eval cc else three-eval cc
+	if (payoutCond != nullptr)  //  if evalcodeAdd not set then it is dual-eval cc else three-eval cc
 	{
         if (mixed) 
             CCtoAnon(payoutCond.get());
@@ -619,7 +620,6 @@ bool Myprivkey(uint8_t myprivkey[])
         static int32_t onetimeflag; static uint8_t sessionpriv[32];
         if ( onetimeflag == 0 )
         {
-            void OS_randombytes(unsigned char *x,long xlen);
             OS_randombytes(sessionpriv,32);
             fprintf(stderr,"privkey for pubkey not found -> generate session specific privkey\n");
             onetimeflag = 1;
@@ -779,7 +779,8 @@ int32_t myGet_mempool_txs(std::vector<CTransaction> &txs,uint8_t evalcode,uint8_
         }
         return (NSPV_mempoolresult.numtxids);
     }
-    BOOST_FOREACH(const CTxMemPoolEntry &e,mempool.mapTx)
+    LOCK(mempool.cs);
+    BOOST_FOREACH(const CTxMemPoolEntry &e, mempool.mapTx)
     {
         txs.push_back(e.GetTx());
         i++;
@@ -787,17 +788,20 @@ int32_t myGet_mempool_txs(std::vector<CTransaction> &txs,uint8_t evalcode,uint8_
     return(i);
 }
 
-int32_t CCCointxidExists(char const *logcategory,uint256 txid, uint256 cointxid)
+int32_t CCCointxidExists(char const* logcategory, uint256 txid, uint256 cointxid)
 {
-    char txidaddr[64]; std::string coin; int32_t numvouts; uint256 hashBlock;
-    std::vector<std::pair<CAddressIndexKey, CAmount> > addressIndex;
-    CCtxidaddr_tweak(txidaddr,cointxid);
-    SetCCtxids(addressIndex,txidaddr,false);
-    for (std::vector<std::pair<CAddressIndexKey, CAmount> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++)
-    {
-        return(-1);
+    char txidaddr[64];
+    std::string coin;
+    int32_t numvouts;
+    uint256 hashBlock;
+
+    std::vector<std::pair<CAddressIndexKey, CAmount>> addressIndex;
+    CCtxidaddr_tweak(txidaddr, cointxid);
+    SetAddressIndexOutputs(addressIndex, txidaddr, false);
+    for (std::vector<std::pair<CAddressIndexKey, CAmount>>::const_iterator it = addressIndex.begin(); it != addressIndex.end(); it++) {
+        return (-1);
     }
-    return(myIs_coinaddr_inmempoolvout(logcategory,txid,txidaddr));
+    return (myIs_coinaddr_inmempoolvout(logcategory, txid, txidaddr));
 }
 
 bool CompareHexVouts(std::string hex1, std::string hex2)
@@ -961,13 +965,14 @@ CPubKey check_signing_pubkey(CScript scriptSig)
 
 
 // returns total of normal inputs signed with this pubkey
-int64_t TotalPubkeyNormalInputs(const CTransaction &tx, const CPubKey &pubkey)
+CAmount TotalPubkeyNormalInputs(Eval *eval, const CTransaction &tx, const CPubKey &pubkey)
 {
-    int64_t total = 0;
-    for (auto vin : tx.vin) {
+    CAmount total = 0;
+
+    for (const auto &vin : tx.vin) {
         CTransaction vintx;
         uint256 hashBlock;
-        if (!IsCCInput(vin.scriptSig) && myGetTransaction(vin.prevout.hash, vintx, hashBlock)) {
+        if (!IsCCInput(vin.scriptSig) && GetTxUnconfirmedOpt(eval, vin.prevout.hash, vintx, hashBlock)) {
             typedef std::vector<unsigned char> valtype;
             std::vector<valtype> vSolutions;
             txnouttype whichType;
@@ -990,17 +995,17 @@ int64_t TotalPubkeyNormalInputs(const CTransaction &tx, const CPubKey &pubkey)
 }
 
 // returns total of CC inputs signed with this pubkey
-int64_t TotalPubkeyCCInputs(const CTransaction &tx, const CPubKey &pubkey)
+CAmount TotalPubkeyCCInputs(Eval *eval, const CTransaction &tx, const CPubKey &pubkey)
 {
-    int64_t total = 0;
-    for (auto vin : tx.vin) {
+    CAmount total = 0;
+    for (const auto &vin : tx.vin) {
         if (IsCCInput(vin.scriptSig)) {
             CPubKey vinPubkey = check_signing_pubkey(vin.scriptSig);
             if (vinPubkey.IsValid()) {
                 if (vinPubkey == pubkey) {
                     CTransaction vintx;
                     uint256 hashBlock;
-                    if (myGetTransaction(vin.prevout.hash, vintx, hashBlock)) {
+                    if (GetTxUnconfirmedOpt(eval, vin.prevout.hash, vintx, hashBlock)) {
                         total += vintx.vout[vin.prevout.n].nValue;
                     }
                 }
@@ -1010,18 +1015,22 @@ int64_t TotalPubkeyCCInputs(const CTransaction &tx, const CPubKey &pubkey)
     return total;
 }
 
-bool ProcessCC(struct CCcontract_info *cp,Eval* eval, std::vector<uint8_t> paramsNull,const CTransaction &ctx, unsigned int nIn, std::shared_ptr<CCheckCCEvalCodes> evalcodeChecker)
+bool ProcessCC(struct CCcontract_info* cp, Eval* eval, std::vector<uint8_t> paramsNull, const CTransaction& ctx, unsigned int nIn, std::shared_ptr<CCheckCCEvalCodes> evalcodeChecker)
 {
-    CTransaction createTx; uint256 assetid,assetid2,hashBlock; uint8_t funcid; int32_t height,i,n,from_mempool = 0; int64_t amount; std::vector<uint8_t> origpubkey;
+    CTransaction createTx;
+    uint256 assetid, assetid2, hashBlock;
+    uint8_t funcid;
+    int32_t height, i, n, from_mempool = 0;
+    int64_t amount;
+    std::vector<uint8_t> origpubkey;
     height = KOMODO_CONNECTING;
-    if ( KOMODO_CONNECTING < 0 ) // always comes back with > 0 for final confirmation
-        return(true);
-    if ( ASSETCHAINS_CC == 0 || (height & ~(1<<30)) < KOMODO_CCACTIVATE )
+    if (KOMODO_CONNECTING < 0) // always comes back with > 0 for final confirmation
+        return (true);
+    if (ASSETCHAINS_CC == 0 || (height & ~(1 << 30)) < KOMODO_CCACTIVATE)
         return eval->Invalid("CC are disabled or not active yet");
-    if ( (KOMODO_CONNECTING & (1<<30)) != 0 )
-    {
+    if ((KOMODO_CONNECTING & (1 << 30)) != 0) {
         from_mempool = 1;
-        height &= ((1<<30) - 1);
+        height &= ((1 << 30) - 1);
     }
     if (cp->validate == NULL)
         return eval->Invalid("validation not supported for eval code");
@@ -1033,69 +1042,65 @@ bool ProcessCC(struct CCcontract_info *cp,Eval* eval, std::vector<uint8_t> param
     //    return(true);
     //fprintf(stderr,"process CC %02x\n",cp->evalcode);
     CCclearvars(cp);
-    if ( paramsNull.size() != 0 ) // Don't expect params
+    if (paramsNull.size() != 0) // Don't expect params
         return eval->Invalid("Cannot have params");
     //else if ( ctx.vout.size() == 0 )      // spend can go to z-addresses
     //    return eval->Invalid("no-vouts");
-    else if ( (*cp->validate)(cp,eval,ctx,nIn) != 0 )
-    {
+    else if ((*cp->validate)(cp, eval, ctx, nIn) != 0) {
         //fprintf(stderr,"done CC %02x\n",cp->evalcode);
         //cp->prevtxid = txid;
-        if (evalcodeChecker.get()!=NULL) evalcodeChecker->MarkEvalCode(ctx.GetHash(),cp->evalcode);
-        return(true);
+        if (evalcodeChecker.get() != NULL)
+            evalcodeChecker->MarkEvalCode(ctx.GetHash(), cp->evalcode);
+        return (true);
     }
     //fprintf(stderr,"invalid CC %02x\n",cp->evalcode);
-    return(false);
+    return (false);
 }
 
-extern struct CCcontract_info CCinfos[0x100];
-extern std::string MYCCLIBNAME;
-bool CClib_validate(struct CCcontract_info *cp,int32_t height,Eval *eval,const CTransaction tx,unsigned int nIn);
-
-bool CClib_Dispatch(const CC *cond,Eval *eval,std::vector<uint8_t> paramsNull,const CTransaction &txTo,unsigned int nIn,std::shared_ptr<CCheckCCEvalCodes> evalcodeChecker)
+bool CClib_Dispatch(const CC* cond, Eval* eval, std::vector<uint8_t> paramsNull, const CTransaction& txTo, unsigned int nIn, std::shared_ptr<CCheckCCEvalCodes> evalcodeChecker)
 {
-    uint8_t evalcode; int32_t height,from_mempool; struct CCcontract_info *cp;
-    if ( ASSETCHAINS_CCLIB != MYCCLIBNAME )
-    {
-        fprintf(stderr,"-ac_cclib=%s vs myname %s\n",ASSETCHAINS_CCLIB.c_str(),MYCCLIBNAME.c_str());
+    uint8_t evalcode;
+    int32_t height, from_mempool;
+    struct CCcontract_info* cp;
+    if (ASSETCHAINS_CCLIB != MYCCLIBNAME) {
+        fprintf(stderr, "-ac_cclib=%s vs myname %s\n", ASSETCHAINS_CCLIB.c_str(), MYCCLIBNAME.c_str());
         return eval->Invalid("-ac_cclib name mismatches myname");
     }
     height = KOMODO_CONNECTING;
-    if ( KOMODO_CONNECTING < 0 ) // always comes back with > 0 for final confirmation
-        return(true);
-    if ( ASSETCHAINS_CC == 0 || (height & ~(1<<30)) < KOMODO_CCACTIVATE )
+    if (KOMODO_CONNECTING < 0) // always comes back with > 0 for final confirmation
+        return (true);
+    if (ASSETCHAINS_CC == 0 || (height & ~(1 << 30)) < KOMODO_CCACTIVATE)
         return eval->Invalid("CC are disabled or not active yet");
-    if ( (KOMODO_CONNECTING & (1<<30)) != 0 )
-    {
+    if ((KOMODO_CONNECTING & (1 << 30)) != 0) {
         from_mempool = 1;
-        height &= ((1<<30) - 1);
+        height &= ((1 << 30) - 1);
     }
     evalcode = cond->code[0];
-    if (evalcodeChecker.get()!=NULL && evalcodeChecker->CheckEvalCode(txTo.GetHash(),evalcode)!=0) return true;
-    if ( evalcode >= EVAL_FIRSTUSER && evalcode <= EVAL_LASTUSER )
-    {
+    if (evalcodeChecker.get() != NULL && evalcodeChecker->CheckEvalCode(txTo.GetHash(), evalcode) != 0)
+        return true;
+    if (evalcode >= EVAL_FIRSTUSER && evalcode <= EVAL_LASTUSER) {
         cp = &CCinfos[(int32_t)evalcode];
-        if ( cp->didinit == 0 )
-        {
-            if ( CClib_initcp(cp,evalcode) == 0 )
+        if (cp->didinit == 0) {
+            if (CClib_initcp(cp, evalcode) == 0)
                 cp->didinit = 1;
-            else return eval->Invalid("unsupported CClib evalcode");
+            else
+                return eval->Invalid("unsupported CClib evalcode");
         }
         CCclearvars(cp);
-        if ( paramsNull.size() != 0 ) // Don't expect params
+        if (paramsNull.size() != 0) // Don't expect params
             return eval->Invalid("Cannot have params");
-        else if ( CClib_validate(cp,height,eval,txTo,nIn) != 0 )
-        {
-            if (evalcodeChecker.get()!=NULL) evalcodeChecker->MarkEvalCode(txTo.GetHash(),evalcode);
-            return(true);
+        else if (CClib_validate(cp, height, eval, txTo, nIn) != 0) {
+            if (evalcodeChecker.get() != NULL)
+                evalcodeChecker->MarkEvalCode(txTo.GetHash(), evalcode);
+            return (true);
         }
-        return(false); //eval->Invalid("error in CClib_validate");
+        return (false); //eval->Invalid("error in CClib_validate");
     }
     return eval->Invalid("cclib CC must have evalcode between 16 and 127");
 }
 
-void OS_randombytes(unsigned char *x,long xlen);
-extern bits256 curve25519_basepoint9();
+//void OS_randombytes(unsigned char *x,long xlen);
+//extern bits256 curve25519_basepoint9();
 
 int32_t _SuperNET_cipher(uint8_t nonce[crypto_box_NONCEBYTES],uint8_t *cipher,uint8_t *message,int32_t len,bits256 destpub,bits256 srcpriv,uint8_t *buf)
 {
@@ -1480,10 +1485,11 @@ UniValue OracleFormat(uint8_t *data,int32_t datalen,char *format,int32_t formatl
 
 
 // get OP_DROP data:
-bool GetCCDropAsOpret(const CScript &scriptPubKey, CScript &opret)
+CScript GetCCDropAsOpret(const CScript &scriptPubKey)
 {
     std::vector<std::vector<unsigned char>> vParams;
     CScript dummy; 
+    CScript opret;
 
     if (scriptPubKey.IsPayToCryptoCondition(&dummy, vParams))
     {
@@ -1494,11 +1500,12 @@ bool GetCCDropAsOpret(const CScript &scriptPubKey, CScript &opret)
             LOGSTREAMFN("ccutils", CCLOG_DEBUG1, stream << " evalcode=" << (int)parsed.evalCode << " vKeys.size()=" << (int)parsed.vKeys.size() << " vData.size()=" << (int)parsed.vData.size() << std::endl);
             if (parsed.vData.size() > 0)      {
                 opret << OP_RETURN << parsed.vData[0];  // return vData[0] as cc opret
-                return true;
+                return opret;
             }
         }
 
-        /*if (vParams.size() >= 1)  // allow more data after cc opret
+        /* parse OP_DROP without verus header (such opdrops are not supported anymore):
+        if (vParams.size() >= 1)  // allow more data after cc opret
         {
             //uint8_t version;
             //uint8_t evalCode;
@@ -1523,10 +1530,9 @@ bool GetCCDropAsOpret(const CScript &scriptPubKey, CScript &opret)
                 opret << OP_RETURN << vParams[0];  // no verus header, treat vParams[0] as cc data and return as opret
                 return true;
             }
-        }
-        */
+        } */
     }
-    return false;
+    return CScript();
 }
 
 // get OP_DROP data for mixed cc vouts
@@ -1627,7 +1633,7 @@ UniValue CCaddress(struct CCcontract_info *cp, const char *name, const std::vect
 bool CCDecodeTxVout(const CTransaction &tx, int32_t n, uint8_t &evalcode, uint8_t &funcid, uint8_t &version, uint256 &creationId)
 {
     CScript opdrop;
-    vscript_t ccdata;
+    vscript_t vccdata;
 
     if (tx.vout.size() > 0)     
     {
@@ -1635,18 +1641,23 @@ bool CCDecodeTxVout(const CTransaction &tx, int32_t n, uint8_t &evalcode, uint8_
 
         // first try if OP_DROP data exists
         bool usedOpreturn;
-        if (GetCCDropAsOpret(tx.vout[n].scriptPubKey, opdrop))
-            GetOpReturnData(opdrop, ccdata), usedOpreturn = false;
-        else
-            GetOpReturnData(tx.vout.back().scriptPubKey, ccdata), usedOpreturn = true;  // use OP_RETURN in the last vout if no OP_DROP data
+        CScript opdrop;
+        if (!(opdrop = GetCCDropAsOpret(tx.vout[n].scriptPubKey)).empty()) {
+            GetOpReturnData(opdrop, vccdata);
+            usedOpreturn = false;
+        }
+        else   {
+            GetOpReturnData(tx.vout.back().scriptPubKey, vccdata); 
+            usedOpreturn = true;  // use OP_RETURN in the last vout if no OP_DROP data
+        }
 
         // use following algotithm to determine creationId
         // get the evalcode from ccdata
         // if no cc vins found with this evalcode this is the creation tx and creationId = tx.GetHash()
         // else the creationId is after the version field: 'evalcode funcid version creationId'
-        if (ccdata.size() >= 3)  {
+        if (vccdata.size() >= 3)  {
             struct CCcontract_info *cp, C; 
-            cp = CCinit(&C, ccdata[0]);
+            cp = CCinit(&C, vccdata[0]);
             int32_t i = 0;
             for (; i < tx.vin.size(); i ++)
                 if (cp->ismyvin(tx.vin[i].scriptSig))
@@ -1654,17 +1665,17 @@ bool CCDecodeTxVout(const CTransaction &tx, int32_t n, uint8_t &evalcode, uint8_
             if (i == tx.vin.size()) 
             {
                 creationId = tx.GetHash(); // tx is the creation tx
-                evalcode = ccdata[0];
-                funcid = ccdata[1];
-                version = ccdata[2];
+                evalcode = vccdata[0];
+                funcid = vccdata[1];
+                version = vccdata[2];
                 LOGSTREAMFN("ccutils", CCLOG_DEBUG1, stream << " evalcode=" << (int)evalcode << " funcid=" << (char)funcid << "(" << (int)funcid << "), version=" << (int)version << std::endl); 
             }
             else
             {
                 uint256 encodedCrid;
-                if (ccdata.size() >= 3 + sizeof(uint256))   {  // get creationId from the ccdata
+                if (vccdata.size() >= 3 + sizeof(uint256))   {  // get creationId from the ccdata
                     bool isEof = true;
-                    if (!E_UNMARSHAL(ccdata, ss >> evalcode; ss >> funcid; ss >> version; ss >> encodedCrid; isEof = ss.eof()) && isEof) {  // E_UNMARSHAL might parse okay but return false if not EoF yet. So EoF==true means bad parse
+                    if (!E_UNMARSHAL(vccdata, ss >> evalcode; ss >> funcid; ss >> version; ss >> encodedCrid; isEof = ss.eof()) && isEof) {  // E_UNMARSHAL might parse okay but return false if not EoF yet. So EoF==true means bad parse
                         LOGSTREAMFN("ccutils", CCLOG_DEBUG1, stream << "failed to decode ccdata, isEof=" << isEof << " usedOpreturn=" << usedOpreturn << " tx=" << HexStr(E_MARSHAL(ss << tx)) << std::endl);
                         return false;
                     }
@@ -1674,6 +1685,34 @@ bool CCDecodeTxVout(const CTransaction &tx, int32_t n, uint8_t &evalcode, uint8_
             }
         }
         return true;
+    }
+    return false;
+}
+
+bool IsBlockHashInActiveChain(uint256 hashBlock)
+{
+    AssertLockHeld(cs_main);
+    BlockMap::iterator mi = mapBlockIndex.find(hashBlock);
+    if (mi != mapBlockIndex.end() && (*mi).second) {
+        CBlockIndex* pindex = (*mi).second;
+        if (chainActive.Contains(pindex)) 
+            return true;
+    }
+    return false;
+}
+
+/**
+ * IsTxidInActiveChain load a tx and checks if it is in active chain (not in orphaned blocks)
+ * cs_main section should be locked
+ */
+bool IsTxidInActiveChain(uint256 txid)
+{
+    CTransaction tx;
+    uint256 hashBlock;
+
+    if (myGetTransaction(txid, tx, hashBlock))
+    {
+        return IsBlockHashInActiveChain(hashBlock);
     }
     return false;
 }

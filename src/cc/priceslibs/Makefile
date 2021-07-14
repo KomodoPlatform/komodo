@@ -16,4 +16,4 @@ libnistrandomparser.dll: NistRandomParser.cpp cjsonpointer.cpp cjsonpointer.h ..
 	$(CXX) $(CXXFLAGS_WIN) -shared NistRandomParser.cpp cjsonpointer.cpp ../../cJSON.c -o $@ -std=c++11 -static-libgcc -static-libstdc++
 
 clean:
-	rm libpricessampleparser.* libnistrandomparser.*.
+	-rm libpricessampleparser.* libnistrandomparser.*.

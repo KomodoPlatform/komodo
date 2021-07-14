@@ -8,7 +8,7 @@ import os
 import time
 from util import assert_success, assert_error, mine_and_waitconfirms,\
     send_and_mine, rpc_connect, wait_some_blocks, generate_random_string, komodo_teardown
-
+from slickrpc.exc import RpcException
 
 @pytest.mark.usefixtures("proxy_connection")
 def test_oracles(test_params):
@@ -73,8 +73,12 @@ def test_oracles(test_params):
     list_fund_txid = []
     for f in valid_formats:
         # trying to register with negative datafee
-        result = rpc.oraclesregister(globals()["oracle_{}".format(f)], "-100")
-        assert_error(result)
+        try :
+            result = rpc.oraclesregister(globals()["oracle_{}".format(f)], "-100")
+            assert_error(result)
+        except RpcException as e : # catching AmountFromValue(-100) exception
+            print('got normal exception', e)
+            pass
 
         # trying to register with zero datafee
         result = rpc.oraclesregister(globals()["oracle_{}".format(f)], "0")

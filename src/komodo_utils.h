@@ -1706,7 +1706,7 @@ void komodo_args(char *argv0)
 
 
     IS_STAKED_NOTARY = GetArg("-stakednotary", -1);
-    KOMODO_NSPV = GetArg("-nSPV",0);
+    KOMODO_NSPV = GetArg("-nSPV",0);  // 1 means light node, <= 0 means full node
     memset(ccenables,0,sizeof(ccenables));
     memset(disablebits,0,sizeof(disablebits));
     memset(ccEnablesHeight,0,sizeof(ccEnablesHeight));

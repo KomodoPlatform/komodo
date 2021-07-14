@@ -668,30 +668,29 @@ CAmount GetMinRelayFee(const CTransaction& tx, unsigned int nBytes, bool fAllowF
 class CCheckCCEvalCodes
 {
     //! The set of evalcodes that are already processed in CC validation.
-    std::map<uint256, std::set<uint8_t> > evalcodes;
+    std::map<uint256, std::set<uint8_t>> evalcodes;
 
     //! Mutex to protect evalcodes map
     boost::mutex mutex_eval;
 
 public:
-    void MarkEvalCode(uint256 txid,uint8_t ecode)
+    void MarkEvalCode(uint256 txid, uint8_t ecode)
     {
         boost::unique_lock<boost::mutex> lock(mutex_eval);
         auto search = evalcodes.find(txid);
-        if (search==evalcodes.end())
-        {
+        if (search == evalcodes.end()) {
             std::set<uint8_t> tmp;
             tmp.insert(ecode);
-            evalcodes[txid]=tmp;
-        }
-        else search->second.insert(ecode);
+            evalcodes[txid] = tmp;
+        } else
+            search->second.insert(ecode);
     }
 
     bool CheckEvalCode(uint256 txid, uint8_t ecode)
     {
         boost::unique_lock<boost::mutex> lock(mutex_eval);
         auto search = evalcodes.find(txid);
-        return search==evalcodes.end()?false:(search->second.find(ecode)!=search->second.end());
+        return search == evalcodes.end() ? false : (search->second.find(ecode) != search->second.end());
     }
 };
 
@@ -808,7 +807,7 @@ private:
     CScript scriptPubKey;
     CAmount amount;
     const CTransaction *ptxTo;
-    unsigned int n;
+    unsigned int n;  // vin/vout index, since ccv2 unused for cc validation (it always validates the whole cc tx and does not re-enter validation for each vin)
     unsigned int nFlags;
     bool cacheStore;
     uint32_t consensusBranchId;

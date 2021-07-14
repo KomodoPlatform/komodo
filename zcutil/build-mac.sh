@@ -48,19 +48,13 @@ PREFIX="$(pwd)/depends/$TRIPLET"
 make "$@" -C ./depends/ V=1 NO_QT=1 NO_PROTON=1
 
 #BUILD CCLIB
-
-WD=$PWD
-
-cd src/cc
-echo $PWD
-echo Making cclib...
-./makecustom
-
-cd ./priceslibs
-echo Making prices feeds custom libs...
-make all
-
-cd $WD
+# WD=$PWD
+# cd src/cc
+# echo $PWD
+# echo Making cclib...
+# ./makecustom
+# cd $WD
+# cclib building now added to src/Makefile.am
 
 ./autogen.sh
 CPPFLAGS="-I$PREFIX/include -arch x86_64" LDFLAGS="-L$PREFIX/lib -arch x86_64 -Wl,-no_pie" \

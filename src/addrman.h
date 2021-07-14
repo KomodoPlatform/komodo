@@ -524,6 +524,11 @@ public:
 
     CAddrMan()
     {
+        // Clear(); // causes boost: mutex lock failed in pthread_mutex_lock: Invalid argument exception because of static init concurrency (static dd_mutex has not been constructed yet)
+    }
+
+    void Init()
+    {
         Clear();
     }
 

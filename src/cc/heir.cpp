@@ -451,7 +451,8 @@ uint256 _FindLatestFundingTx(uint256 fundingtxid, uint8_t& funcId, uint256 &toke
 					bool isNonOwner = false;
 
 					// we ignore 'donations' tx (with non-owner inputs) for calculating if heir is allowed to spend:
-                    if (TotalPubkeyNormalInputs(regtx, ownerPubkey) > 0 || TotalPubkeyCCInputs(regtx, ownerPubkey) > 0)
+                    // TODO: pass Eval instead of NULL
+                    if (TotalPubkeyNormalInputs(NULL, regtx, ownerPubkey) > 0 || TotalPubkeyCCInputs(NULL, regtx, ownerPubkey) > 0)  
                     {
 					// CheckVinPubkey(regtx.vin, ownerPubkey, isOwner, isNonOwner);
 					// if (isOwner && !isNonOwner) {
@@ -520,7 +521,7 @@ template <class Helper> int64_t Add1of2AddressInputs(struct CCcontract_info* cp,
             if ((txid == fundingtxid || fundingTxidInOpret == fundingtxid) &&
                 funcId != 0 &&
                 isMyFuncId(funcId) &&
-                (typeid(Helper) != typeid(TokenHelper) || IsTokensvout<TokensV1>(true, true, cp, nullptr, heirtx, voutIndex, tokenid) > 0) && // token validation logic
+                (typeid(Helper) != typeid(TokenHelper) || IsTokensvout<TokensV1>(cp, nullptr, heirtx, voutIndex, tokenid) > 0) && // token validation logic
                 //(voutValue = IsHeirFundingVout<Helper>(cp, heirtx, voutIndex, ownerPubkey, heirPubkey)) > 0 &&		// heir contract vout validation logic - not used since we moved to 2-eval vouts
                 !myIsutxo_spentinmempool(ignoretxid,ignorevin,txid, voutIndex))
             {
@@ -546,7 +547,7 @@ template <class Helper> int64_t LifetimeHeirContractFunds(struct CCcontract_info
     Helper::GetCoinsOrTokensCCaddress1of2(coinaddr, ownerPubkey, heirPubkey); // get the address of cryptocondition '1 of 2 pubkeys'
     
     std::vector<std::pair<CAddressIndexKey, CAmount>> addressIndexes;
-    SetCCtxids(addressIndexes, coinaddr,true);
+    SetAddressIndexOutputs(addressIndexes, coinaddr, true);
     
     int64_t total = 0;
     for (std::vector<std::pair<CAddressIndexKey, CAmount>>::const_iterator it = addressIndexes.begin(); it != addressIndexes.end(); it++) {
@@ -569,7 +570,7 @@ template <class Helper> int64_t LifetimeHeirContractFunds(struct CCcontract_info
             if (funcId != 0 &&
                 (txid == fundingtxid || fundingTxidInOpret == fundingtxid) &&
                 isMyFuncId(funcId) && !isSpendingTx(funcId) &&
-                (typeid(Helper) != typeid(TokenHelper) || IsTokensvout<TokensV1>(true, true, cp, nullptr, heirtx, ivout, tokenid) > 0) &&
+                (typeid(Helper) != typeid(TokenHelper) || IsTokensvout<TokensV1>(cp, nullptr, heirtx, ivout, tokenid) > 0) &&
                 !myIsutxo_spentinmempool(ignoretxid,ignorevin,txid, ivout)) // exclude tx in mempool
             {
                 total += it->second; // dont do this: tx.vout[ivout].nValue; // in vin[0] always is the pay to 1of2 addr (funding or change)
@@ -647,7 +648,7 @@ template <typename Helper> UniValue _HeirFund(int64_t txfee, int64_t amount, std
 
 		// for initial funding do not allow to sign by non-owner key:
 		// if (hasNotMypubkey) {
-        if (TotalPubkeyNormalInputs(mtx, myPubkey) < amount && TotalPubkeyCCInputs(mtx, myPubkey) < amount)
+        if (TotalPubkeyNormalInputs(NULL, mtx, myPubkey) < amount && TotalPubkeyCCInputs(NULL, mtx, myPubkey) < amount)
         {
 			result.push_back(Pair("result", "error"));
 			result.push_back(Pair("error", "using non-owner inputs not allowed"));
@@ -773,7 +774,8 @@ template <class Helper> UniValue _HeirAdd(uint256 fundingtxid, int64_t txfee, in
             
 		// warn the user he's making a donation if this is all non-owner keys:
 		// if (hasNotMypubkey) {
-        if (TotalPubkeyNormalInputs(mtx, myPubkey) < amount && TotalPubkeyCCInputs(mtx, myPubkey) < amount)  {
+        // TODO: change to Eval instead of NULL
+        if (TotalPubkeyNormalInputs(NULL, mtx, myPubkey) < amount && TotalPubkeyCCInputs(NULL, mtx, myPubkey) < amount)  {
 			result.push_back(Pair("result", "warning"));
 			result.push_back(Pair("warning", "you are about to make a donation to heir fund"));
 		}

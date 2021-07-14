@@ -459,7 +459,7 @@ bool ValidateSwapRemainder(int64_t remaining_price, int64_t remaining_nValue, in
 }
 
 // get tx's vin inputs for cp->evalcode and addr. If addr is null then all inputs are added
-CAmount AssetsGetCCInputs(struct CCcontract_info *cp, const char *addr, const CTransaction &tx)
+CAmount AssetsGetCCInputs(Eval *eval, struct CCcontract_info *cp, const char *addr, const CTransaction &tx)
 {
 	CTransaction vinTx; 
     uint256 hashBlock; 
@@ -472,7 +472,7 @@ CAmount AssetsGetCCInputs(struct CCcontract_info *cp, const char *addr, const CT
 	{												    
 		if (cp->ismyvin(tx.vin[i].scriptSig))
 		{
-			if (myGetTransaction(tx.vin[i].prevout.hash, vinTx, hashBlock))
+			if (eval->GetTxUnconfirmed(tx.vin[i].prevout.hash, vinTx, hashBlock))
 			{
                 char scriptaddr[KOMODO_ADDRESS_BUFSIZE];
                 if (addr == NULL || Getscriptaddress(scriptaddr, vinTx.vout[tx.vin[i].prevout.n].scriptPubKey) && strcmp(scriptaddr, addr) == 0)  {

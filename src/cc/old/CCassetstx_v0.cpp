@@ -123,7 +123,7 @@ UniValue AssetOrders(uint256 refassetid, CPubKey pk, uint8_t additionalEvalCode)
     if (refassetid != zeroid) {
         GetNonfungibleData(refassetid, vopretNonfungible);
         if (vopretNonfungible.size() > 0)
-            cpAssets->evalcodeNFT = vopretNonfungible.begin()[0];
+            cpAssets->evalcodeAdd = vopretNonfungible.begin()[0];
     }
 	GetTokensCCaddress(cpAssets, assetsTokensUnspendableAddr, GetUnspendable(cpAssets, NULL));
 	SetCCunspents(unspentOutputsTokens, assetsTokensUnspendableAddr,true);
@@ -144,7 +144,7 @@ UniValue AssetOrders(uint256 refassetid, CPubKey pk, uint8_t additionalEvalCode)
         char assetsDualEvalTokensUnspendableAddr[64];
 
         // try also dual eval tokenasks (and we do not need bids):
-        cpAssets->evalcodeNFT = additionalEvalCode;
+        cpAssets->evalcodeAdd = additionalEvalCode;
         GetTokensCCaddress(cpAssets, assetsDualEvalTokensUnspendableAddr, GetUnspendable(cpAssets, NULL));
         SetCCunspents(unspentOutputsDualEvalTokens, assetsDualEvalTokensUnspendableAddr,true);
 
@@ -354,21 +354,21 @@ std::string CreateSell(int64_t txfee,int64_t askamount,uint256 assetid,int64_t p
             // if this is non-fungible tokens:
             if( !vopretNonfungible.empty() )
                 // set its evalcode
-                cpAssets->evalcodeNFT = vopretNonfungible.begin()[0];
+                cpAssets->evalcodeAdd = vopretNonfungible.begin()[0];
 
 			CPubKey unspendableAssetsPubkey = GetUnspendable(cpAssets, NULL);
-            mtx.vout.push_back(MakeTokensCC1vout(EVAL_ASSETS, cpAssets->evalcodeNFT, askamount, unspendableAssetsPubkey));
+            mtx.vout.push_back(MakeTokensCC1vout(EVAL_ASSETS, cpAssets->evalcodeAdd, askamount, unspendableAssetsPubkey));
             mtx.vout.push_back(MakeCC1vout(EVAL_ASSETS, txfee, mypk));  //marker (seems, it is not for tokenorders)
             if (inputs > askamount)
                 CCchange = (inputs - askamount);
             if (CCchange != 0)
                 // change to single-eval or non-fungible token vout (although for non-fungible token change currently is not possible)
-                mtx.vout.push_back(MakeTokensCC1vout((cpAssets->evalcodeNFT) ? cpAssets->evalcodeNFT : EVAL_TOKENS, CCchange, mypk));	
+                mtx.vout.push_back(MakeTokensCC1vout((cpAssets->evalcodeAdd) ? cpAssets->evalcodeAdd : EVAL_TOKENS, CCchange, mypk));	
 
 			std::vector<CPubKey> voutTokenPubkeys;
 			voutTokenPubkeys.push_back(unspendableAssetsPubkey);   
 
-            return FinalizeCCTx(mask, cpTokens, mtx, mypk, txfee, 
+            return FinalizeCCTx(0, cpTokens, mtx, mypk, txfee, 
                 EncodeTokenOpRet(assetid, voutTokenPubkeys, 
                     std::make_pair(OPRETID_ASSETSDATA, EncodeAssetOpRet('s', zeroid, pricetotal, Mypubkey()))));
 		}
@@ -545,9 +545,9 @@ std::string CancelSell(int64_t txfee,uint256 assetid,uint256 asktxid)
             }
 
             if (vopretNonfungible.size() > 0)
-                cpAssets->evalcodeNFT = vopretNonfungible.begin()[0];
+                cpAssets->evalcodeAdd = vopretNonfungible.begin()[0];
 
-            mtx.vout.push_back(MakeTokensCC1vout(cpAssets->evalcodeNFT == 0 ? EVAL_TOKENS : cpAssets->evalcodeNFT, askamount, mypk));	// one-eval token vout
+            mtx.vout.push_back(MakeTokensCC1vout(cpAssets->evalcodeAdd == 0 ? EVAL_TOKENS : cpAssets->evalcodeAdd, askamount, mypk));	// one-eval token vout
             mtx.vout.push_back(CTxOut(txfee,CScript() << ParseHex(HexStr(mypk)) << OP_CHECKSIG));
             
 			std::vector<CPubKey> voutTokenPubkeys;  
@@ -565,7 +565,7 @@ std::string CancelSell(int64_t txfee,uint256 assetid,uint256 asktxid)
 			// add additional eval-tokens unspendable assets privkey:
 			CCaddr2set(cpAssets, EVAL_TOKENS, unspendableAssetsPk, unspendableAssetsPrivkey, unspendableAssetsAddr);
 
-            return(FinalizeCCTx(mask, cpAssets, mtx, mypk, txfee, 
+            return(FinalizeCCTx(0, cpAssets, mtx, mypk, txfee, 
 				EncodeTokenOpRet(assetid, voutTokenPubkeys,  
                     std::make_pair(OPRETID_ASSETSDATA, EncodeAssetOpRet('x', zeroid, 0, Mypubkey())))));
         }
@@ -652,7 +652,7 @@ std::string FillBuyOffer(int64_t txfee,uint256 assetid,uint256 bidtxid,int64_t f
 				std::vector<CPubKey> voutTokenPubkeys;
 				voutTokenPubkeys.push_back(pubkey2pk(origpubkey));
 
-                return(FinalizeCCTx(mask, cpTokens, mtx, mypk, txfee, 
+                return(FinalizeCCTx(0, cpTokens, mtx, mypk, txfee, 
 					EncodeTokenOpRet(assetid, voutTokenPubkeys, 
                         std::make_pair(OPRETID_ASSETSDATA, EncodeAssetOpRet('B', zeroid, remaining_required, origpubkey)))));
             } 
@@ -783,9 +783,9 @@ std::string FillSell(int64_t txfee, uint256 assetid, uint256 assetid2, uint256 a
             std::vector<CPubKey> voutTokenPubkeys;
             voutTokenPubkeys.push_back(mypk);
 
-            cpAssets->evalcodeNFT = additionalTokensEvalcode2;
+            cpAssets->evalcodeAdd = additionalTokensEvalcode2;
 
-            return(FinalizeCCTx(mask, cpAssets, mtx, mypk, txfee,
+            return(FinalizeCCTx(0, cpAssets, mtx, mypk, txfee,
                 EncodeTokenOpRet(assetid, voutTokenPubkeys, 
                     std::make_pair(OPRETID_ASSETSDATA, EncodeAssetOpRet(assetid2 != zeroid ? 'E' : 'S', assetid2, remaining_nValue, origpubkey)))));
         } else {

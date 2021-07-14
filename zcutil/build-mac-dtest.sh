@@ -40,15 +40,17 @@ fi
 TRIPLET=`./depends/config.guess`
 PREFIX="$(pwd)/depends/$TRIPLET"
 
+# make dependences
 make "$@" -C ./depends/ V=1 NO_QT=1 NO_PROTON=1
 
 #BUILD CCLIB
+# WD=$PWD
+# cd src/cc
+# echo $PWD
+# ./makecustom
+# cd $WD
+# cclib building now added to src/Makefile.am
 
-WD=$PWD
-cd src/cc
-echo $PWD
-./makecustom
-cd $WD
 
 ./autogen.sh
 CPPFLAGS="-I$PREFIX/include -arch x86_64 -DTESTMODE" LDFLAGS="-L$PREFIX/lib -arch x86_64 -Wl,-no_pie" \

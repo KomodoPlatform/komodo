@@ -509,6 +509,7 @@ bool komodo_txnotarizedconfirmed(uint256 txid,int32_t minconfirms=1);
 int32_t komodo_blockload(CBlock& block, CBlockIndex *pindex);
 uint32_t komodo_chainactive_timestamp();
 uint32_t GetLatestTimestamp(int32_t height);
+int32_t komodo_get_current_height();
 
 #ifndef KOMODO_NSPV_FULLNODE
 #define KOMODO_NSPV_FULLNODE (KOMODO_NSPV <= 0)
@@ -531,8 +532,8 @@ struct komodo_staking *komodo_addutxo(struct komodo_staking *array, int32_t *num
 void komodo_createminerstransactions();
 uint32_t komodo_segid32(char *coinaddr);
 
-#ifndef _WIN32
-void OS_randombytes(unsigned char *x, long xlen);
-#endif
+// #ifndef _WIN32
+void OS_randombytes(unsigned char *x, long xlen);  // this func impl exists for win too
+// #endif
 
 #endif

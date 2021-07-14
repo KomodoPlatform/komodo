@@ -171,7 +171,7 @@ std::string FSMCreate(uint64_t txfee,std::string name,std::string states)
         if ( CCchange != 0 )
             mtx.vout.push_back(MakeCC1vout(EVAL_FSM,CCchange,fsmpk));
         mtx.vout.push_back(CTxOut(nValue,CScript() << ParseHex(HexStr(mypk)) << OP_CHECKSIG));
-        return(FinalizeCCTx(-1LL,cp,mtx,mypk,txfee,opret));
+        return(FinalizeCCTx(0,cp,mtx,mypk,txfee,opret));
     } else fprintf(stderr,"cant find fsm inputs\n");
     return("");
 }

@@ -472,7 +472,7 @@ int64_t IsTokensvout(bool goDeeper, bool checkPubkeys /*<--not used, always true
                             && !IsTokenMarkerVout(vout))  // should not be marker here
                             ccOutputs += vout.nValue;
 
-                    int64_t normalInputs = TotalPubkeyNormalInputs(tx, origPubkey);  // check if normal inputs are really signed by originator pubkey (someone not cheating with originator pubkey)
+                    int64_t normalInputs = TotalPubkeyNormalInputs(eval, tx, origPubkey);  // check if normal inputs are really signed by originator pubkey (someone not cheating with originator pubkey)
                     LOGSTREAM("cctokens", CCLOG_DEBUG2, stream << indentStr << "IsTokensvout() normalInputs=" << normalInputs << " ccOutputs=" << ccOutputs << " for tokenbase=" << reftokenid.GetHex() << std::endl);
 
                     if (normalInputs >= ccOutputs) {
@@ -626,14 +626,14 @@ int64_t AddTokenCCInputs(struct CCcontract_info *cp, CMutableTransaction &mtx, C
 
     GetNonfungibleData(tokenid, vopretNonfungible);
     if (vopretNonfungible.size() > 0)
-        cp->evalcodeNFT = vopretNonfungible.begin()[0];
+        cp->evalcodeAdd = vopretNonfungible.begin()[0];
 
 	GetTokensCCaddress(cp, tokenaddr, pk);
 	SetCCunspents(unspentOutputs, tokenaddr,true);
 
 
     if (unspentOutputs.empty()) {
-        LOGSTREAM((char *)"cctokens", CCLOG_INFO, stream << "AddTokenCCInputs() no utxos for token dual/three eval addr=" << tokenaddr << " evalcode=" << (int)cp->evalcode << " additionalTokensEvalcode2=" << (int)cp->evalcodeNFT << std::endl);
+        LOGSTREAM((char *)"cctokens", CCLOG_INFO, stream << "AddTokenCCInputs() no utxos for token dual/three eval addr=" << tokenaddr << " evalcode=" << (int)cp->evalcode << " additionalTokensEvalcode2=" << (int)cp->evalcodeAdd << std::endl);
     }
 
 	threshold = total / (maxinputs != 0 ? maxinputs : CC_MAXVINS);
@@ -827,7 +827,7 @@ std::string CreateToken(int64_t txfee, int64_t tokensupply, std::string name, st
 
 	if (AddNormalinputs2(mtx, tokensupply + 2 * txfee, 64) > 0)  // add normal inputs only from mypk
 	{
-        int64_t mypkInputs = TotalPubkeyNormalInputs(mtx, mypk);  
+        int64_t mypkInputs = TotalPubkeyNormalInputs(NULL, mtx, mypk);  
         if (mypkInputs < tokensupply) {     // check that tokens amount are really issued with mypk (because in the wallet there maybe other privkeys)
             CCerror = "some inputs signed not with -pubkey=pk";
             return std::string("");
@@ -900,7 +900,7 @@ std::string TokenTransfer(int64_t txfee, uint256 tokenid, vscript_t destpubkey, 
 			std::vector<CPubKey> voutTokenPubkeys;
 			voutTokenPubkeys.push_back(pubkey2pk(destpubkey));  // dest pubkey for validating vout
 
-			return FinalizeCCTx(mask, cp, mtx, mypk, txfee, EncodeTokenOpRet(tokenid, voutTokenPubkeys, std::make_pair((uint8_t)0, vopretEmpty))); 
+			return FinalizeCCTx(0, cp, mtx, mypk, txfee, EncodeTokenOpRet(tokenid, voutTokenPubkeys, std::make_pair((uint8_t)0, vopretEmpty))); 
 		}
 		else {
             CCerror = strprintf("no token inputs");

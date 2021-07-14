@@ -722,13 +722,13 @@ std::string RewardsUnlock(uint64_t txfee,char *planstr,uint256 fundingtxid,uint2
                     fprintf(stderr,"inputs %.8f CCchange %.8f amount %.8f reward %.8f\n",(double)inputs/COIN,(double)CCchange/COIN,(double)amount/COIN,(double)reward/COIN);
                     mtx.vout.push_back(MakeCC1vout(cp->evalcode,CCchange,rewardspk));
                     mtx.vout.push_back(CTxOut(amount+reward,scriptPubKey));
-                    return(FinalizeCCTx(-1LL,cp,mtx,mypk,txfee,EncodeRewardsOpRet('U',sbits,fundingtxid)));
+                    return(FinalizeCCTx(0,cp,mtx,mypk,txfee,EncodeRewardsOpRet('U',sbits,fundingtxid)));
                 }
                 else
                 {
                     firstmtx.vout.push_back(CTxOut(amount-txfee*2,scriptPubKey));
                     fprintf(stderr,"not enough rewards funds to payout %.8f, recover mode tx\n",(double)(reward+txfee)/COIN);
-                    return(FinalizeCCTx(-1LL,cp,firstmtx,mypk,txfee,EncodeRewardsOpRet('U',sbits,fundingtxid)));
+                    return(FinalizeCCTx(0,cp,firstmtx,mypk,txfee,EncodeRewardsOpRet('U',sbits,fundingtxid)));
                 }
             }
             else

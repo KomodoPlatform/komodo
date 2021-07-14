@@ -171,7 +171,7 @@ bool AssetsValidate(struct CCcontract_info *cpAssets,Eval* eval,const CTransacti
     // non-fungible tokens support:
     GetNonfungibleData(assetid, vopretNonfungible);
     if (vopretNonfungible.size() > 0)
-        cpAssets->evalcodeNFT = vopretNonfungible.begin()[0];
+        cpAssets->evalcodeAdd = vopretNonfungible.begin()[0];
 
 	// find dual-eval tokens unspendable addr:
 	GetTokensCCaddress(cpAssets, tokensDualEvalUnspendableCCaddr, GetUnspendable(cpAssets, NULL));

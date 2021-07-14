@@ -1545,7 +1545,7 @@ UniValue PaymentsList(struct CCcontract_info *cp,char *jsonstr)
     int32_t top=0,bottom=0,minimum=10000; std::vector<std::vector<uint8_t>> excludeScriptPubKeys; int8_t fixedAmount = 0;
     Paymentspk = GetUnspendable(cp,0);
     GetCCaddress1of2(cp,markeraddr,Paymentspk,Paymentspk);
-    SetCCtxids(addressIndex,markeraddr,true);
+    SetAddressIndexOutputs(addressIndex,markeraddr,true);
     for (std::vector<std::pair<CAddressIndexKey, CAmount> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++)
     {
         txid = it->first.txhash;
