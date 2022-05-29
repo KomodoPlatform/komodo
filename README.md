@@ -79,6 +79,9 @@ cd komodo
 ./zcutil/fetch-params.sh
 ./zcutil/build.sh -j$(expr $(nproc) - 1)
 #This can take some time.
+sudo ln -sf /home/$USER/komodo/src/komodo-cli /usr/local/bin/komodo-cli
+sudo ln -sf /home/$USER/komodo/src/komodod /usr/local/bin/komodod
+#Creating symlinks
 ```
 
 
