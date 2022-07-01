@@ -1119,7 +1119,6 @@ UniValue cleanwallettransactions(const UniValue& params, bool fHelp, const CPubK
             + HelpExampleRpc("cleanwallettransactions","\"1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48d\"")
         );
 
-    assert(pwalletMain != NULL);
     LOCK2(cs_main, pwalletMain->cs_wallet);
     UniValue ret(UniValue::VOBJ);
     uint256 exception; int32_t txs = pwalletMain->mapWallet.size();
