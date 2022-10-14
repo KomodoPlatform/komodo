@@ -117,3 +117,4 @@ uint32_t GetLatestTimestamp(int32_t height);
 #define KOMODO_NSPV_SUPERLITE (KOMODO_NSPV > 0)
 #endif // !KOMODO_NSPV_SUPERLITE
 
+bool inline IS_ASSET_CHAIN(const std::string &symbol) { return !symbol.empty(); }

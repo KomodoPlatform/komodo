@@ -22,6 +22,7 @@
 #include "config/bitcoin-config.h"
 #endif
 
+#include "komodo_defs.h"
 #include "main.h"
 #include "net.h"
 
@@ -1390,8 +1391,9 @@ void ThreadOpenConnections()
         if (GetTime() - nStart > 60) {
             static bool done = false;
             if (!done) {
-                // skip DNS seeds for staked chains.
-                if ( is_STAKED(chainName.symbol()) == 0 ) {
+                // skip DNS seeds for staked chains. 
+                // Also skip fixed kmd seeds for assets chains
+                if ( is_STAKED(chainName.symbol()) == 0 && !IS_ASSET_CHAIN(chainName.symbol())) {
                     //LogPrintf("Adding fixed seed nodes as DNS doesn't seem to be available.\n");
                     LogPrintf("Adding fixed seed nodes.\n");
                     addrman.Add(convertSeed6(Params().FixedSeeds()), CNetAddr("127.0.0.1"));
@@ -1817,6 +1819,8 @@ void StartNode(boost::thread_group& threadGroup, CScheduler& scheduler)
     if ( is_STAKED(chainName.symbol()) != 0 )
         SoftSetBoolArg("-dnsseed", false);
 
+    if (IS_ASSET_CHAIN(chainName.symbol()))  
+        SoftSetBoolArg("-dnsseed", false);  // disable kmd seeds for asset chains
     //
     // Start threads
     //
