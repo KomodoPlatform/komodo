@@ -655,4 +655,7 @@ public:
 
 };
 
+const bool DEFAULT_NO_ADDRMAN_DELAY = false;
+extern bool fNoAddrManDelay;
+
 #endif // BITCOIN_ADDRMAN_H

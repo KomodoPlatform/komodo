@@ -23,6 +23,8 @@
 #include "serialize.h"
 #include "streams.h"
 
+bool fNoAddrManDelay = DEFAULT_NO_ADDRMAN_DELAY;
+
 int CAddrInfo::GetTriedBucket(const uint256& nKey, const std::vector<bool> &asmap) const
 {
     uint64_t hash1 = (CHashWriter(SER_GETHASH, 0) << nKey << GetKey()).GetHash().GetCheapHash();
@@ -358,7 +360,7 @@ CAddrInfo CAddrMan::Select_(bool newOnly)
     // Track number of attempts to find a table entry, before giving up to avoid infinite loop
     const int kMaxRetries = 200000;         // magic number so unit tests can pass
     const int kRetriesBetweenSleep = 1000;
-    const int kRetrySleepInterval = 100;    // milliseconds
+    const int kRetrySleepInterval = fNoAddrManDelay ? 0 : 100;    // milliseconds
 
     if (newOnly && nNew == 0)
         return CAddrInfo();
