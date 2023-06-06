@@ -7,6 +7,8 @@
 #include "script/standard.h"
 #include "utilstrencodings.h"
 
+#include "consensus/upgrades.h"
+
 namespace TestScriptStandartTests {
 
     class TestScriptStandartTests : public ::testing::Test {};
@@ -620,6 +622,43 @@ namespace TestScriptStandartTests {
             }
 
             test_count++;
+        }
+    }
+
+    // Test for script minimal data validation
+    TEST(TestScriptStandartTests, VerifyMinimalData)
+    {
+        uint32_t consensusBranchId = NetworkUpgradeInfo[Consensus::UPGRADE_SAPLING].nBranchId;
+
+        ScriptError err;
+        for (int i=0; i<67000; i++) {
+            CScript script;
+            script << i;
+            EXPECT_TRUE(script.IsPushOnly()) << "Number " << i << " is not pure push.";
+            EXPECT_TRUE(VerifyScript(script, CScript() << OP_1, SCRIPT_VERIFY_MINIMALDATA, BaseSignatureChecker(), consensusBranchId, &err)) << "Number " << i << " push is not minimal data.";
+            EXPECT_TRUE(err == SCRIPT_ERR_OK) << ScriptErrorString(err);
+        }
+
+        for (unsigned int i=0; i<=MAX_SCRIPT_ELEMENT_SIZE; i++) {
+            std::vector<unsigned char> data(200, '\111');
+            std::vector<unsigned char> opDropData(i, '\222'); 
+            CScript script;
+            script << data;
+            EXPECT_TRUE(script.IsPushOnly()) << "Length " << i << " is not pure push.";
+            EXPECT_TRUE(VerifyScript(script, CScript() << opDropData << OP_DROP, SCRIPT_VERIFY_MINIMALDATA, BaseSignatureChecker(), consensusBranchId, &err)) << "Length " << i << " push is not minimal data.";
+            EXPECT_TRUE(err == SCRIPT_ERR_OK) << ScriptErrorString(err);
+        }
+
+        // check error if opdrop data is >= 520:
+        {
+            ScriptError err;
+            int i = MAX_SCRIPT_ELEMENT_SIZE+1;
+            CScript script;
+            std::vector<unsigned char> data(200, '\111');
+            script << data;
+            std::vector<unsigned char> opDropData(i, '\222'); 
+            EXPECT_FALSE(VerifyScript(script, CScript() << opDropData << OP_DROP, SCRIPT_VERIFY_MINIMALDATA, BaseSignatureChecker(), consensusBranchId, &err)) << "Length " << i << " push is not minimal data.";
+            EXPECT_TRUE(err == SCRIPT_ERR_PUSH_SIZE) << ScriptErrorString(err);
         }
     }
 
