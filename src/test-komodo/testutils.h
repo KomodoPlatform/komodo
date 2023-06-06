@@ -28,6 +28,8 @@ void displayTransaction(const CTransaction& tx);
 void displayBlock(const CBlock& blk);
 
 void setConsoleDebugging(bool enable);
+void enableDebug();
+void restoreDebug();
 
 void setupChain();
 /***

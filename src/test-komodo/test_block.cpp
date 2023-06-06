@@ -140,13 +140,6 @@ TEST(test_block, TestDoubleSpendInSameBlock)
         EXPECT_FALSE(alice->CommitTransaction(aliceToCharlie.transaction, aliceToCharlie.reserveKey, state));
         EXPECT_EQ(state.GetRejectReason(), "mempool conflict");
     }
-    /*  
-    EXPECT_EQ(mempool.size(), 3);
-    CValidationState validationState;
-    std::shared_ptr<CBlock> block = chain.generateBlock(notary, &validationState);
-    EXPECT_EQ( block, nullptr );
-    EXPECT_EQ( validationState.GetRejectReason(), "bad-txns-inputs-missingorspent");
-    */
 }
 
 bool CalcPoW(CBlock *pblock);
@@ -157,8 +150,6 @@ TEST(test_block, TestProcessBlock)
     EXPECT_EQ(chain.GetIndex()->nHeight, 0);
     auto notary = std::make_shared<TestWallet>(chain.getNotaryKey(), "notary");
     auto alice = std::make_shared<TestWallet>("alice");
-    auto bob = std::make_shared<TestWallet>("bob");
-    auto charlie = std::make_shared<TestWallet>("charlie");
     std::shared_ptr<CBlock> lastBlock = chain.generateBlock(notary); // gives notary everything
     EXPECT_EQ(chain.GetIndex()->nHeight, 1);
     chain.IncrementChainTime();
@@ -208,8 +199,6 @@ TEST(test_block, TestProcessBadBlock)
     TestChain chain;
     auto notary = std::make_shared<TestWallet>(chain.getNotaryKey(), "notary");
     auto alice = std::make_shared<TestWallet>("alice");
-    auto bob = std::make_shared<TestWallet>("bob");
-    auto charlie = std::make_shared<TestWallet>("charlie");
     std::shared_ptr<CBlock> lastBlock = chain.generateBlock(notary); // genesis block
     // add a transaction to the mempool
     TransactionInProcess fundAlice = notary->CreateSpendTransaction(alice, 100000);
@@ -236,4 +225,52 @@ TEST(test_block, TestProcessBadBlock)
     EXPECT_EQ(state.GetRejectReason(), "bad-txnmrklroot");
     // Verify transaction is still in mempool
     EXPECT_EQ(mempool.size(), 1);
+}
+
+// Test block time in future
+TEST(test_block, TestFutureBlockTime)
+{
+    TestChain chain;
+    chainName = assetchain(); // KMD
+    STAKED_NOTARY_ID = -1; // init as it should be in KMD
+    EXPECT_EQ(chain.GetIndex()->nHeight, 0);
+    auto notary = std::make_shared<TestWallet>(chain.getNotaryKey(), "notary");
+    auto alice = std::make_shared<TestWallet>("alice");
+    // auto bob = std::make_shared<TestWallet>("bob");
+    //auto charlie = std::make_shared<TestWallet>("charlie");
+    std::shared_ptr<CBlock> lastBlock = chain.generateBlock(notary); // gives notary everything
+    EXPECT_EQ(chain.GetIndex()->nHeight, 1);
+    chain.IncrementChainTime();
+    // add a transaction to the mempool
+    TransactionInProcess fundAlice = notary->CreateSpendTransaction(alice, 100000);
+    EXPECT_TRUE( chain.acceptTx(fundAlice.transaction).IsValid() );
+    // construct the block
+    CBlock block;
+    int32_t newHeight = chain.GetIndex()->nHeight + 1;
+    CValidationState state;
+
+    // add first a coinbase tx
+    auto consensusParams = Params().GetConsensus();
+    CMutableTransaction txNew = CreateNewContextualCMutableTransaction(consensusParams, newHeight);
+    txNew.vin.resize(1);
+    txNew.vin[0].prevout.SetNull();
+    txNew.vin[0].scriptSig = (CScript() << newHeight << CScriptNum(1)) + COINBASE_FLAGS;
+    txNew.vout.resize(1);
+    txNew.vout[0].nValue = GetBlockSubsidy(newHeight,consensusParams);
+    txNew.nExpiryHeight = 0;
+    block.vtx.push_back(CTransaction(txNew));
+    block.nBits = GetNextWorkRequired( chain.GetIndex(), &block, Params().GetConsensus());
+    block.hashPrevBlock = lastBlock->GetHash();
+    block.hashMerkleRoot = block.BuildMerkleTree();
+    // Add the PoW
+    EXPECT_TRUE(CalcPoW(&block));
+    state = CValidationState();
+
+    enableDebug();
+    block.nTime = GetTime() + 301; // block time is too far in future
+    EXPECT_FALSE( ProcessNewBlock(false, newHeight, state, nullptr, &block, false, nullptr) );
+
+    block.nTime = GetTime() + 299; // block time is acceptable
+    EXPECT_TRUE( ProcessNewBlock(false, newHeight, state, nullptr, &block, false, nullptr) );
+    restoreDebug();
 }

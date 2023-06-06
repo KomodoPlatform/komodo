@@ -82,6 +82,21 @@ void setConsoleDebugging(bool enable)
     fPrintToConsole = enable;
 }
 
+static bool fDebugSaved = false;
+static bool fPrintToConsoleSaved = false;
+void enableDebug()
+{
+    fDebugSaved = fDebug;
+    fPrintToConsoleSaved = fPrintToConsole;
+    fDebug = true;
+    fPrintToConsole = true;
+}
+void restoreDebug()
+{
+    fDebug = fDebugSaved;
+    fPrintToConsole = fPrintToConsoleSaved;
+}
+
 void setupChain()
 {
     SelectParams(CBaseChainParams::REGTEST);
