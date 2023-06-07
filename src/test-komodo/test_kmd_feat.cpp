@@ -17,7 +17,7 @@
 #include "komodo_interest.h"
 #include "cc/CCinclude.h"
 #include "komodo_hardfork.h"
-
+#include "testutils.h"
 
 CCriticalSection& get_cs_main(); // in main.cpp
 
@@ -121,7 +121,11 @@ protected:
 };
 
 // some komodo consensus extensions
+
+// test komodo_interest_validate function which ensures tx nLockTime is no too old
 TEST_F(KomodoFeatures, komodo_interest_validate) {
+
+    CTestBlockWriter wr; // create temp dir for writing blocks
 
     // Add a fake transaction to the wallet
     CMutableTransaction mtx0 = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_interest_height-1);
@@ -140,7 +144,11 @@ TEST_F(KomodoFeatures, komodo_interest_validate) {
     pfakeIndex->pprev = nullptr;
     pfakeIndex->nHeight = komodo_interest_height-1;
     pfakeIndex->nTime = 1663755146;
-    mapBlockIndex.insert(std::make_pair(blockHash, pfakeIndex));
+
+    BlockMap::iterator pi = mapBlockIndex.insert(std::make_pair(blockHash, pfakeIndex)).first;
+    pfakeIndex->phashBlock = &((*pi).first);
+    wr.WriteBlock(block, pfakeIndex, pfakeIndex->nHeight);
+
     chainActive.SetTip(pfakeIndex);
     EXPECT_TRUE(chainActive.Contains(pfakeIndex));
     EXPECT_EQ(komodo_interest_height-1, chainActive.Height());
