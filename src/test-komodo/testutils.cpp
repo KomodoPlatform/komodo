@@ -917,3 +917,50 @@ bool TestWallet::CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey, C
     }
     return true;
 }
+
+// CTestBlockWriter impl
+bool FindBlockPos(int32_t tmpflag,CValidationState &state, CDiskBlockPos &pos, unsigned int nAddSize, unsigned int nHeight, uint64_t nTime, bool fKnown);
+bool ReceivedBlockTransactions(const CBlock &block, CValidationState& state, CBlockIndex *pindexNew, const CDiskBlockPos& pos);
+
+void CTestBlockWriter::InitTempDir() {
+    dataDir = GetTempPath() / strprintf("test_komodo_%li_%i", GetTime(), GetRand(100000));
+    if (!chainName.isKMD())
+        dataDir = dataDir / strprintf("_%s", chainName.symbol().c_str());
+    boost::filesystem::create_directories(dataDir);
+    mapArgs["-datadir"] = dataDir.string();
+}
+
+void CTestBlockWriter::CleanTempDir() {
+    try {
+        boost::filesystem::remove_all(dataDir);
+    } catch(boost::filesystem::filesystem_error &ex) {} 
+}
+
+void CTestBlockWriter::WriteBlock(CBlock &block, CBlockIndex *pindex, int32_t nHeight)
+{
+    int32_t usetmp = 0;
+    CValidationState state;
+    const CChainParams& chainparams = Params();
+
+    // Write block to history file
+    try {
+        unsigned int nBlockSize = ::GetSerializeSize(block, SER_DISK, CLIENT_VERSION);
+        CDiskBlockPos* dbp = nullptr;
+        CDiskBlockPos blockPos;
+        if (dbp != NULL)
+            blockPos = *dbp;
+        bool bPosFound = FindBlockPos(usetmp, state, blockPos, nBlockSize+8, nHeight, block.GetBlockTime(), dbp != NULL);
+        EXPECT_TRUE(bPosFound);
+        if (!bPosFound) return;
+            
+        if (dbp == NULL)
+            EXPECT_TRUE(WriteBlockToDisk(block, blockPos, chainparams.MessageStart()));
+        ReceivedBlockTransactions(block, state, pindex, blockPos);
+        if ( usetmp != 0 )
+            pindex->nStatus |= BLOCK_IN_TMPFILE;
+    } catch (const std::runtime_error& e) {
+        std::cerr << __func__ << "could not do CTestBlockWriter::WriteBlock()" << std::endl;
+        return;
+    }
+}
+

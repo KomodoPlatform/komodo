@@ -196,3 +196,22 @@ public:
 private:
     CKey key;
 };
+
+// CTestBlockWriter to write a block in a temp dir
+// to provide GetTransaction() calls to work in tests 
+class CTestBlockWriter {
+public:
+    CTestBlockWriter() {
+        InitTempDir();
+    }
+    ~CTestBlockWriter() {
+        CleanTempDir();
+    }
+    void WriteBlock(CBlock &block, CBlockIndex *pindex, int32_t nHeight);
+
+private:
+    void InitTempDir();
+    void CleanTempDir();
+    boost::filesystem::path dataDir;
+};
+
