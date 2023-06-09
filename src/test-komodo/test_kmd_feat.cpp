@@ -21,30 +21,28 @@
 
 CCriticalSection& get_cs_main(); // in main.cpp
 
-const int komodo_interest_height = 247205+1;
 const std::string testwif("Usr24VoC3h4cSfSrFiGJkWLYwmkM1VnsBiMyWZvrF6QR5ZQ6Fbuu");
 const std::string testpk("034b082c5819b5bf8798a387630ad236a8e800dbce4c4e24a46f36dfddab3cbff5");
 const std::string testaddr("RXTUtWXgkepi8f2ohWLL9KhtGKRjBV48hT");
 
-// Fake the input of transaction mtx0/0
+// Simlified coin cache for testing
 class FakeCoinsViewDB2 : public CCoinsView { // change name to FakeCoinsViewDB2 to avoid name conflict with same class name in different files (seems a bug in macos gcc)
 public:
     FakeCoinsViewDB2() {
-        // allowed mtx0 txids
-        sAllowedTxIn.insert(uint256S("c8ff545cdc5e921cdbbd24555a462340fc1092e09977944ec687c5bf3ef9c30b")); // 10 * COIN, nLockTime = 0
-        sAllowedTxIn.insert(uint256S("529d8dcec041465fdf6c1f873ef1055eec106db5f02ae222814d3764bb8e6660")); // 10 * COIN, nLockTime = 1663755146
-        sAllowedTxIn.insert(uint256S("3533600e69a22776afb765305a0ec46bcb06e1942f36a113d73733190092f9d5")); // 10 * COIN, nLockTime = 1663755147
+    }
+
+    // populate cache unconditionally
+    void add_unchecked(const CTransaction &tx, int32_t nHeight) {
+        CCoins newCoins;
+        newCoins.vout = tx.vout;
+        newCoins.nHeight = nHeight;
+        testCache[tx.GetHash()] = newCoins;
     }
 
     bool GetCoins(const uint256 &txid, CCoins &coins) const {
-        if (sAllowedTxIn.count(txid)) {
-            CTxOut txOut;
-            txOut.nValue = 10 * COIN;
-            txOut.scriptPubKey = GetScriptForDestination(DecodeDestination(testaddr));
-            CCoins newCoins;
-            newCoins.vout.resize(1);
-            newCoins.vout[0] = txOut;
-            newCoins.nHeight = komodo_interest_height-1; /* TODO: return correct nHeight depends on txid */
+        auto it = testCache.find(txid);
+        if (it != testCache.end()) {
+            CCoins newCoins = it->second;
             coins.swap(newCoins);
             return true;
         }
@@ -52,14 +50,9 @@ public:
     }
 
     bool HaveCoins(const uint256 &txid) const {
-        if (sAllowedTxIn.count(txid))
+        if (testCache.count(txid))
             return true;
         return false;
-    }
-
-    uint256 GetBestBlock() const override
-    {
-        return bestBlockHash;
     }
 
     bool BatchWrite(CCoinsMap &mapCoins,
@@ -77,8 +70,8 @@ public:
         return false;
     }
 
-    uint256 bestBlockHash;
-    std::set<uint256> sAllowedTxIn;
+private:
+    std::map<uint256, CCoins> testCache;
 };
 
 bool TestSignTx(const CKeyStore& keystore, CMutableTransaction& mtx, int32_t vini, CAmount utxovalue, const CScript scriptPubKey)
@@ -120,228 +113,383 @@ protected:
     bool fPrintToConsoleOld;
 };
 
-// some komodo consensus extensions
+// Komodo interest extensions
 
-// test komodo_interest_validate function which ensures tx nLockTime is no too old
-TEST_F(KomodoFeatures, komodo_interest_validate) {
+// Test komodo_interest_validate function which ensures tx nLockTime is not too old
+TEST_F(KomodoFeatures, komodo_interest_validate) 
+{
+    const int UTXO_HEIGHT = 247205+1;
 
-    CTestBlockWriter wr; // create temp dir for writing blocks
+    CTestBlockWriter wr; // create temp data dir for writing blocks
 
-    // Add a fake transaction to the wallet
-    CMutableTransaction mtx0 = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_interest_height-1);
+    // Add a fake transaction to the index
+    CMutableTransaction mtx0 = CreateNewContextualCMutableTransaction(Params().GetConsensus(), UTXO_HEIGHT-1);
     CScript scriptPubKey = GetScriptForDestination(DecodeDestination(testaddr));
     mtx0.vout.push_back(CTxOut(10 * COIN, scriptPubKey));
     mtx0.nLockTime = 1663755146;
 
     // Fake-mine the transaction
     ASSERT_EQ(-1, chainActive.Height());
-    CBlock block;
-    //block.hashPrevBlock = chainActive.Tip()->GetBlockHash();
-    block.vtx.push_back(mtx0);
-    block.hashMerkleRoot = block.BuildMerkleTree();
-    auto blockHash = block.GetHash();
-    CBlockIndex *pfakeIndex = new CBlockIndex(block);  // TODO: change back to auto if index is not cleaned
-    pfakeIndex->pprev = nullptr;
-    pfakeIndex->nHeight = komodo_interest_height-1;
-    pfakeIndex->nTime = 1663755146;
+    CBlock block0;
+    block0.vtx.push_back(mtx0);
+    block0.hashMerkleRoot = block0.BuildMerkleTree();
 
-    BlockMap::iterator pi = mapBlockIndex.insert(std::make_pair(blockHash, pfakeIndex)).first;
-    pfakeIndex->phashBlock = &((*pi).first);
-    wr.WriteBlock(block, pfakeIndex, pfakeIndex->nHeight);
+    CBlockIndex *pfakeIndex0 = new CBlockIndex(block0);  // TODO: change back to auto if index is not cleaned
+    pfakeIndex0->pprev = nullptr;
+    pfakeIndex0->nHeight = UTXO_HEIGHT-1;
+    pfakeIndex0->nTime = 1663755146;
 
-    chainActive.SetTip(pfakeIndex);
-    EXPECT_TRUE(chainActive.Contains(pfakeIndex));
-    EXPECT_EQ(komodo_interest_height-1, chainActive.Height());
+    uint256 blockHash0 = block0.GetHash();
+    BlockMap::iterator pi = mapBlockIndex.insert(std::make_pair(blockHash0, pfakeIndex0)).first;
+    pfakeIndex0->phashBlock = &((*pi).first);
+    wr.WriteBlock(block0, pfakeIndex0, pfakeIndex0->nHeight);  // write to temp blocks db for GetTransaction to access txns in the block
+
+    chainActive.SetTip(pfakeIndex0);
+    EXPECT_TRUE(chainActive.Contains(pfakeIndex0));
+    EXPECT_EQ(UTXO_HEIGHT-1, chainActive.Height());
 
     FakeCoinsViewDB2 fakedb;
-    fakedb.bestBlockHash = blockHash;
+    fakedb.add_unchecked(mtx0, UTXO_HEIGHT-1);
+
     CCoinsViewCache fakeview(&fakedb);
+    fakeview.SetBestBlock(block0.GetHash());
     pcoinsTip = &fakeview;
 
-    //std::cerr << " mtx0.GetHash()=" << mtx0.GetHash().GetHex() << std::endl;
-    EXPECT_NE(fakedb.sAllowedTxIn.count(mtx0.GetHash()), 0);
-
     CTxMemPool pool(::minRelayTxFee);
-    bool missingInputs;
-    CMutableTransaction mtxSpend = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_interest_height);
-    mtxSpend.vin.push_back(CTxIn(mtx0.GetHash(), 0));
-    CScript scriptPubKey1 = GetScriptForDestination(DecodeDestination(testaddr));
-    mtxSpend.vout.push_back(CTxOut(10 * COIN, scriptPubKey1));
-
     CBasicKeyStore tempKeystore;
     CKey key = DecodeSecret(testwif);
     tempKeystore.AddKey(key);
 
-    // create coinbase
-    CMutableTransaction txcb = CreateNewContextualCMutableTransaction(Params().GetConsensus(), komodo_interest_height);
+    // spending tx template
+    CMutableTransaction mtxSpend = CreateNewContextualCMutableTransaction(Params().GetConsensus(), UTXO_HEIGHT);
+    mtxSpend.vin.push_back(CTxIn(mtx0.GetHash(), 0));
+    CScript scriptPubKey1 = GetScriptForDestination(DecodeDestination(testaddr));
+    mtxSpend.vout.push_back(CTxOut(10 * COIN, scriptPubKey1));
+
+    // create next block coinbase
+    CMutableTransaction txcb = CreateNewContextualCMutableTransaction(Params().GetConsensus(), UTXO_HEIGHT);
     txcb.vin.resize(1);
     txcb.vin[0].prevout.SetNull();
-    txcb.vin[0].scriptSig = (CScript() << komodo_interest_height << CScriptNum(1)) + COINBASE_FLAGS;
+    txcb.vin[0].scriptSig = (CScript() << UTXO_HEIGHT << CScriptNum(1)) + COINBASE_FLAGS;
     txcb.vout.resize(1);
-    txcb.vout[0].scriptPubKey = GetScriptForDestination(DecodeDestination(testaddr));;
-    txcb.vout[0].nValue = GetBlockSubsidy(komodo_interest_height, Params().GetConsensus()) + 0;
+    txcb.vout[0].scriptPubKey = GetScriptForDestination(DecodeDestination(testaddr));
+    txcb.vout[0].nValue = GetBlockSubsidy(UTXO_HEIGHT, Params().GetConsensus()) + 0;
     txcb.nExpiryHeight = 0;
-    txcb.nLockTime = pfakeIndex->GetMedianTimePast()+1;
+    txcb.nLockTime = pfakeIndex0->GetMedianTimePast()+1;
 
     {
-        // check invalid interest in mempool
+        // check invalid interest tx locktime in mempool
 
         mtxSpend.nLockTime = chainActive.Tip()->GetMedianTimePast() + 777 - 3600 - 1; // too long time to add into mempool (prevent incorrect interest)
         EXPECT_TRUE(TestSignTx(tempKeystore, mtxSpend, 0, mtx0.vout[0].nValue, mtx0.vout[0].scriptPubKey));
 
         CValidationState state1;
         CTransaction tx1(mtxSpend);
+        bool missingInputs;
 
         LOCK( get_cs_main() );
         EXPECT_FALSE(AcceptToMemoryPool(pool, state1, tx1, false, &missingInputs));
         EXPECT_EQ(state1.GetRejectReason(), "komodo-interest-invalid");
     }
     {
-        // check invalid interest in block
+        // check invalid interest tx locktime in block
 
-        CBlock block;
-        block.vtx.push_back(txcb);
+        CBlock block1;
+        block1.vtx.push_back(txcb);
 
         mtxSpend.nLockTime = chainActive.Tip()->GetMedianTimePast() - 3600 - 1; // too long time staying in mempool (a bit longer than when adding )
         mtxSpend.vin[0].scriptSig.clear();
         EXPECT_TRUE(TestSignTx(tempKeystore, mtxSpend, 0, mtx0.vout[0].nValue, mtx0.vout[0].scriptPubKey));
         CTransaction tx1(mtxSpend);
-        block.vtx.push_back(tx1);
+        block1.vtx.push_back(tx1);
         
-        block.nTime = pfakeIndex->GetMedianTimePast();
+        block1.nTime = pfakeIndex0->GetMedianTimePast();
 
         CValidationState state1;
-        EXPECT_FALSE(ContextualCheckBlock(false, block, state1, pfakeIndex));
+        EXPECT_FALSE(ContextualCheckBlock(false, block1, state1, pfakeIndex0));
         EXPECT_EQ(state1.GetRejectReason(), "komodo-interest-invalid");
     }
     {
-        // check valid interest in mempool
+        // check valid interest tx locktime in mempool
 
-        mtxSpend.nLockTime = chainActive.Tip()->GetMedianTimePast() + 777 - 3600; // not too long time to add into mempool
+        mtxSpend.nLockTime = chainActive.Tip()->GetMedianTimePast() + 777 - 3600; // not too long time to pass komodo_interest_validate() mempool check
         EXPECT_TRUE(TestSignTx(tempKeystore, mtxSpend, 0, mtx0.vout[0].nValue, mtx0.vout[0].scriptPubKey));
 
         CValidationState state1;
         CTransaction tx1(mtxSpend);
+        bool missingInputs;
 
         LOCK( get_cs_main() );
         EXPECT_TRUE(AcceptToMemoryPool(pool, state1, tx1, false, &missingInputs));
     }
-
     {
-        // check valid interest in block
-        mtxSpend.nLockTime = chainActive.Tip()->GetMedianTimePast() - 3600; // not too long time in mempool
+        // check valid interest tx locktime in block
+        mtxSpend.nLockTime = chainActive.Tip()->GetMedianTimePast() - 3600; // not too long time waiting in mempool
         mtxSpend.vin[0].scriptSig.clear();
         EXPECT_TRUE(TestSignTx(tempKeystore, mtxSpend, 0, mtx0.vout[0].nValue, mtx0.vout[0].scriptPubKey));
 
-        CBlock block;
-        block.vtx.push_back(txcb);
+        CBlock block1;
+        block1.vtx.push_back(txcb);
         CTransaction tx1(mtxSpend);
-        block.vtx.push_back(tx1);
-        block.nTime = pfakeIndex->GetMedianTimePast();
+        block1.vtx.push_back(tx1);
+        block1.nTime = pfakeIndex0->GetMedianTimePast();
 
         CValidationState state1;
-        EXPECT_TRUE(ContextualCheckBlock(false, block, state1, pfakeIndex));
+        EXPECT_TRUE(ContextualCheckBlock(false, block1, state1, pfakeIndex0));
     }
+    mapBlockIndex.clear();  // prevent pindex to be deleted in ~CMainCleanup()
+    delete pfakeIndex0;
+}
+
+// Test spending utxo with accrued interest
+TEST_F(KomodoFeatures, SpendInterest) 
+{
+    const int UTXO_HEIGHT = 247205+1;
+
+    CTestBlockWriter wr; // create temp data dir for writing blocks
+
+    // Create block 0
+    // Add a fake transaction to the block0, the index and simplified coin cache
+    CMutableTransaction mtx0 = CreateNewContextualCMutableTransaction(Params().GetConsensus(), UTXO_HEIGHT-1);
+    CScript scriptPubKey = GetScriptForDestination(DecodeDestination(testaddr));
+    mtx0.vout.push_back(CTxOut(10 * COIN, scriptPubKey));
+    mtx0.nLockTime = 1663755146;
+
+    // Fake-mine the transaction
+    ASSERT_EQ(-1, chainActive.Height());
+    CBlock block0;
+    block0.vtx.push_back(mtx0);
+    block0.hashMerkleRoot = block0.BuildMerkleTree();
+
+    CBlockIndex *pfakeIndex0 = new CBlockIndex(block0);  // TODO: change back to auto if index is not cleaned
+    pfakeIndex0->pprev = nullptr;
+    pfakeIndex0->nHeight = UTXO_HEIGHT-1;
+    pfakeIndex0->nTime = 1663755146;
+
+    uint256 blockHash0 = block0.GetHash();
+    BlockMap::iterator pi = mapBlockIndex.insert(std::make_pair(blockHash0, pfakeIndex0)).first;
+    pfakeIndex0->phashBlock = &((*pi).first);
+    wr.WriteBlock(block0, pfakeIndex0, pfakeIndex0->nHeight);  // write to temp blocks db for GetTransaction to access txns in the block
+
+    chainActive.SetTip(pfakeIndex0);
+    EXPECT_TRUE(chainActive.Contains(pfakeIndex0));
+    EXPECT_EQ(UTXO_HEIGHT-1, chainActive.Height());
+
+    FakeCoinsViewDB2 fakedb;
+    fakedb.add_unchecked(mtx0, UTXO_HEIGHT-1);
+
+    CCoinsViewCache fakeview(&fakedb);
+    fakeview.SetBestBlock(block0.GetHash());
+    pcoinsTip = &fakeview;
+
+    CTxMemPool pool(::minRelayTxFee);
+    CBasicKeyStore tempKeystore;
+    CKey key = DecodeSecret(testwif);
+    tempKeystore.AddKey(key);
+
+    // spending tx template
+    CMutableTransaction mtxSpend = CreateNewContextualCMutableTransaction(Params().GetConsensus(), UTXO_HEIGHT);
+    mtxSpend.vin.push_back(CTxIn(mtx0.GetHash(), 0));
+    CScript scriptPubKey1 = GetScriptForDestination(DecodeDestination(testaddr));
+    mtxSpend.vout.push_back(CTxOut(10 * COIN, scriptPubKey1));
 
     {
-        // test interest calculations via CCoinsViewCache::GetValueIn
+        // create block 1 and add it to the block index to advance the chain tip and have non-zero interest
 
-        const uint32_t tipTimes[] = {
-            1663755146,
-            1663762346,                          // chainActive.Tip()->GetMedianTimePast() + 2 * 3600 (MTP from 1663755146 + 2 * 3600)
-            1663762346 + 31 * 24 * 60 * 60,      /* month */
-            1663762346 + 6 * 30 * 24 * 60 * 60,  /* half of a year */
-            1663762346 + 12 * 30 * 24 * 60 * 60, /* year (360 days) */
-            1663762346 + 365 * 24 * 60 * 60,     /* year (365 days) */
-        };
+        // create coinbase for block1
+        CMutableTransaction txcb1 = CreateNewContextualCMutableTransaction(Params().GetConsensus(), UTXO_HEIGHT);
+        txcb1.vin.resize(1);
+        txcb1.vin[0].prevout.SetNull();
+        txcb1.vin[0].scriptSig = (CScript() << UTXO_HEIGHT << CScriptNum(1)) + COINBASE_FLAGS;
+        txcb1.vout.resize(1);
+        txcb1.vout[0].scriptPubKey = GetScriptForDestination(DecodeDestination(testaddr));;
+        txcb1.vout[0].nValue = GetBlockSubsidy(UTXO_HEIGHT, Params().GetConsensus()) + 0;
+        txcb1.nExpiryHeight = 0;
+        txcb1.nLockTime = pfakeIndex0->GetMedianTimePast();
+        CBlock block1;
+        block1.vtx.push_back(txcb1);
 
-        /* komodo_interest_height = 247205+1 */
-        const CAmount interestCollectedBefore250k[] = {0, 11415, 4545454, 25000000, 50000000, 50000000};
-        /* komodo_interest_height = 333332 */
-        const CAmount interestCollectedBefore1M[] = {0, 5802, 4252378, 24663337, 49320871, 49994387};
-        /* komodo_interest_height = 3000000 */
-        const CAmount interestCollected[] = {0, 5795, 4235195, 4235195, 4235195, 4235195};
-        /* komodo_interest_height = 7113400 */
-        const CAmount interestCollectedAfterS7[] = {0, 5795 / 500, 4235195 / 500, 4235195 / 500, 4235195 / 500, 4235195 / 500};
+        block1.hashMerkleRoot = block1.BuildMerkleTree();
+        auto blockHash1 = block1.GetHash();
+        CBlockIndex *pfakeIndex1 = new CBlockIndex(block1);  // TODO: change back to auto if index is not cleaned
+        pfakeIndex1->pprev = pfakeIndex0;
+        pfakeIndex1->nHeight = UTXO_HEIGHT;
+        pfakeIndex1->nTime = 1663755146+36000;  // plus 10h to have some interest
 
-        /* check collected interest */
+        BlockMap::iterator pi = mapBlockIndex.insert(std::make_pair(blockHash1, pfakeIndex1)).first;
+        pfakeIndex1->phashBlock = &((*pi).first);
 
-        const size_t nMaxTipTimes = sizeof(tipTimes) / sizeof(tipTimes[0]);
-        const size_t nMaxInterestCollected = sizeof(interestCollected) / sizeof(interestCollected[0]);
-        assert(nMaxTipTimes == nMaxInterestCollected);
+        chainActive.SetTip(pfakeIndex1);
+        EXPECT_TRUE(chainActive.Contains(pfakeIndex1));
+        EXPECT_EQ(UTXO_HEIGHT, chainActive.Height());
 
-        const int testHeights[] = {
-            247205 + 1, 333332, 3000000, nS7HardforkHeight + 1};
+        pcoinsTip->SetBestBlock(blockHash1);
+
+        // create new block 2
+        SproutMerkleTree sprout_tree;
+        SaplingMerkleTree sapling_tree;
+
+        // try to spend interest
+        mtxSpend.nLockTime = chainActive.Tip()->GetMedianTimePast() + 36000; 
+        mtxSpend.vin[0].scriptSig.clear();
+        mtxSpend.vout[0].nValue += 51395+1;
+        EXPECT_TRUE(TestSignTx(tempKeystore, mtxSpend, 0, mtx0.vout[0].nValue, mtx0.vout[0].scriptPubKey));
+
+        // coinbase for block 2
+        CMutableTransaction txcb2 = CreateNewContextualCMutableTransaction(Params().GetConsensus(), UTXO_HEIGHT+1);
+        txcb2.vin.resize(1);
+        txcb2.vin[0].prevout.SetNull();
+        txcb2.vin[0].scriptSig = (CScript() << UTXO_HEIGHT+1 << CScriptNum(1)) + COINBASE_FLAGS;
+        txcb2.vout.resize(1);
+        txcb2.vout[0].scriptPubKey = GetScriptForDestination(DecodeDestination(testaddr));;
+        txcb2.vout[0].nValue = GetBlockSubsidy(UTXO_HEIGHT+1, Params().GetConsensus()) + 0;
+        txcb2.nExpiryHeight = 0;
+        txcb2.nLockTime = pfakeIndex1->GetMedianTimePast();
+
+        CBlock block2;
+        block2.vtx.push_back(txcb2);
+        CTransaction tx1(mtxSpend);
+        block2.vtx.push_back(tx1);
+        block2.nTime = pfakeIndex1->GetMedianTimePast();
+
+        CValidationState state2;
+        CCoinsViewCache view(pcoinsTip);
+        view.PushAnchor(sprout_tree);
+        view.PushAnchor(sapling_tree);
+
+        CBlockIndex newIndex2;
+        newIndex2.pprev = pfakeIndex1;
+        EXPECT_TRUE(ConnectBlock(block2, state2, &newIndex2, view, true, false));
+        delete pfakeIndex1;
+    }
+    mapBlockIndex.clear();  // prevent pindex to be deleted in ~CMainCleanup()
+    delete pfakeIndex0;
+}
+
+// Test transaction input value with interest
+TEST_F(KomodoFeatures, GetValueWithInterest) 
+{
+    const int32_t HEIGHT_0 = 247205+1;
+    const int32_t BLOCKTIME_0 = 1663755146;
+
+    // test interest calculations via CCoinsViewCache::GetValueIn
+
+    const uint32_t tipTimes[] = {
+        1663755146,
+        1663762346,                          // chainActive.Tip()->GetMedianTimePast() + 2 * 3600 (MTP from 1663755146 + 2 * 3600)
+        1663762346 + 31 * 24 * 60 * 60,      /* month */
+        1663762346 + 6 * 30 * 24 * 60 * 60,  /* half of a year */
+        1663762346 + 12 * 30 * 24 * 60 * 60, /* year (360 days) */
+        1663762346 + 365 * 24 * 60 * 60,     /* year (365 days) */
+    };
+
+    /* tx height = 247205+1 */
+    const CAmount interestCollectedBefore250k[] = {0, 11415, 4545454, 25000000, 50000000, 50000000};
+    /* tx height = 333332 */
+    const CAmount interestCollectedBefore1M[] = {0, 5802, 4252378, 24663337, 49320871, 49994387};
+    /* tx height = 3000000 */
+    const CAmount interestCollected[] = {0, 5795, 4235195, 4235195, 4235195, 4235195};
+    /* tx height = 7113400 */
+    const CAmount interestCollectedAfterS7[] = {0, 5795 / 500, 4235195 / 500, 4235195 / 500, 4235195 / 500, 4235195 / 500};
+
+    /* check collected interest */
+
+    const size_t nMaxTipTimes = sizeof(tipTimes) / sizeof(tipTimes[0]);
+    const size_t nMaxInterestCollected = sizeof(interestCollected) / sizeof(interestCollected[0]);
+    assert(nMaxTipTimes == nMaxInterestCollected);
+
+    const int testHeights[] = {
+        247205 + 1, 333332, 3000000, nS7HardforkHeight + 1};
+
+    for (size_t idx_ht = 0; idx_ht < sizeof(testHeights) / sizeof(testHeights[0]); ++idx_ht)
+    {
+        CBlock block0;
 
         CValidationState state;
+        // Create a fake transaction
+        CMutableTransaction mtx0 = CreateNewContextualCMutableTransaction(Params().GetConsensus(), testHeights[idx_ht] - 1);
+        CScript scriptPubKey = GetScriptForDestination(DecodeDestination(testaddr));
+        mtx0.vout.push_back(CTxOut(10 * COIN, scriptPubKey));
+        mtx0.nLockTime = BLOCKTIME_0;
 
-        for (size_t idx_ht = 0; idx_ht < sizeof(testHeights) / sizeof(testHeights[0]); ++idx_ht)
+        block0.vtx.push_back(mtx0); // no need coinbase for this test
+        CBlockIndex *pfakeIndex0 = new CBlockIndex(block0);  // TODO: change back to auto if index is not cleaned
+        pfakeIndex0->pprev = nullptr;
+        pfakeIndex0->nHeight = testHeights[idx_ht] - 1;
+        pfakeIndex0->nTime = BLOCKTIME_0;
+        uint256 blockHash0 = block0.GetHash();
+
+        FakeCoinsViewDB2 fakedb;
+        fakedb.add_unchecked(mtx0, pfakeIndex0->nHeight);
+        CCoinsViewCache fakeview(&fakedb);
+        fakeview.SetBestBlock(blockHash0);
+        pcoinsTip = &fakeview;
+
+        // spending tx template
+        CMutableTransaction mtxSpend = CreateNewContextualCMutableTransaction(Params().GetConsensus(), testHeights[idx_ht]);
+        mtxSpend.vin.push_back(CTxIn(mtx0.GetHash(), 0));
+        CScript scriptPubKey1 = GetScriptForDestination(DecodeDestination(testaddr));
+        mtxSpend.vout.push_back(CTxOut(10 * COIN, scriptPubKey1));
+
+        for (size_t idx = 0; idx < nMaxTipTimes; ++idx)
         {
+            CTestBlockWriter wr;   // creates temp data dir for writing blocks
+            chainActive.SetTip(nullptr);
+            mapBlockIndex.clear();
 
-            pfakeIndex->nHeight = testHeights[idx_ht] - 1;
-            mtx0.nLockTime = 1663755146;
-            mtxSpend.vin[0] = CTxIn(mtx0.GetHash(), 0);
+            chainActive.SetTip(pfakeIndex0);
+            EXPECT_TRUE(chainActive.Contains(pfakeIndex0));
+            EXPECT_EQ(testHeights[idx_ht] - 1, chainActive.Height());
 
-            for (size_t idx = 0; idx < nMaxTipTimes; ++idx)
+            BlockMap::iterator pi = mapBlockIndex.insert(std::make_pair(blockHash0, pfakeIndex0)).first;
+            pfakeIndex0->phashBlock = &((*pi).first);
+            wr.WriteBlock(block0, pfakeIndex0, pfakeIndex0->nHeight); // write to temp blocks db for GetTransaction to access txns in the block
+
+            // make fake last block
+            CBlock lastBlock;
+            lastBlock.nTime = tipTimes[idx];
+
+            CBlockIndex *pLastBlockIndex = new CBlockIndex(block0);
+            pLastBlockIndex->pprev = pfakeIndex0;
+            pLastBlockIndex->nHeight = testHeights[idx_ht];
+            pLastBlockIndex->nTime = lastBlock.nTime;
+            chainActive.SetTip(pLastBlockIndex);
+
+            mtxSpend.nLockTime = lastBlock.nTime;
+            mtxSpend.vin[0].scriptSig.clear(); // no need to sign tx for this test
+            CTransaction tx1(mtxSpend);
+
+            // put tx which we trying to spend into mempool,
+            // bcz CCoinsViewCache::GetValueIn will call komodo_accrued_interest
+            // -> komodo_interest_args -> GetTransaction
+
+            auto consensusBranchId = CurrentEpochBranchId(chainActive.Height() + 1, Params().GetConsensus());
+            SetMockTime(mtxSpend.nLockTime);
+            fakeview.GetBestBlock(); // bring the best block into scope
+            EXPECT_EQ(chainActive.Tip()->nHeight, testHeights[idx_ht]);
+            CAmount interest = 0;
+            CAmount nValueIn = fakeview.GetValueIn(chainActive.Tip()->nHeight, interest, tx1);
+
+            switch (testHeights[idx_ht])
             {
-                // make fake last block
-                CBlock lastBlock;
-                lastBlock.nTime = tipTimes[idx];
-
-                CBlockIndex *pLastBlockIndex = new CBlockIndex(block);
-                pLastBlockIndex->pprev = pfakeIndex;
-                pLastBlockIndex->nHeight = testHeights[idx_ht];
-                pLastBlockIndex->nTime = lastBlock.nTime;
-                chainActive.SetTip(pLastBlockIndex);
-
-                mtxSpend.nLockTime = lastBlock.nTime;
-                mtxSpend.vin[0].scriptSig.clear();
-                EXPECT_TRUE(TestSignTx(tempKeystore, mtxSpend, 0, mtx0.vout[0].nValue, mtx0.vout[0].scriptPubKey));
-                CTransaction tx1(mtxSpend);
-
-                mempool.clear();
-                mapBlockIndex.clear();
-
-                // put tx which we trying to spend into mempool,
-                // bcz CCoinsViewCache::GetValueIn will call komodo_accrued_interest
-                // -> komodo_interest_args -> GetTransaction
-
-                auto consensusBranchId = CurrentEpochBranchId(chainActive.Height() + 1, Params().GetConsensus());
-                SetMockTime(mtxSpend.nLockTime);
-                CTxMemPoolEntry entry(mtx0, 0, GetTime(), 0, chainActive.Height(), mempool.HasNoInputsOf(mtx0), false, consensusBranchId);
-                mempool.addUnchecked(mtx0.GetHash(), entry, false);
-
-                EXPECT_TRUE(mempool.exists(mtx0.GetHash()));
-
-                // force komodo_getblockindex in komodo_interest_args return a value
-                uint256 zero;
-                zero.SetNull();
-                mapBlockIndex.insert(std::make_pair(zero, pfakeIndex));
-
-                fakeview.GetBestBlock(); // bring the best block into scope
-                EXPECT_EQ(chainActive.Tip()->nHeight, testHeights[idx_ht]);
-                CAmount interest = 0;
-                CAmount nValueIn = fakeview.GetValueIn(chainActive.Tip()->nHeight, interest, tx1);
-
-                switch (testHeights[idx_ht])
-                {
-                case 247205 + 1:
-                    ASSERT_EQ(interest, interestCollectedBefore250k[idx]);
-                    break;
-                case 333332:
-                    ASSERT_EQ(interest, interestCollectedBefore1M[idx]);
-                    break;
-                case 3000000:
-                    ASSERT_EQ(interest, interestCollected[idx]);
-                    break;
-                default:
-                    ASSERT_EQ(interest, interestCollectedAfterS7[idx]);
-                    break;
-                }
-
-                delete pLastBlockIndex;
+            case 247205 + 1:
+                ASSERT_EQ(interest, interestCollectedBefore250k[idx]);
+                break;
+            case 333332:
+                ASSERT_EQ(interest, interestCollectedBefore1M[idx]);
+                break;
+            case 3000000:
+                ASSERT_EQ(interest, interestCollected[idx]);
+                break;
+            default:
+                ASSERT_EQ(interest, interestCollectedAfterS7[idx]);
+                break;
             }
+
+            delete pLastBlockIndex; // was not added to mapBlockIndex
         }
+        mapBlockIndex.clear();  // prevent pindex to be deleted in ~CMainCleanup()
+        delete pfakeIndex0;
     }
 }
 
