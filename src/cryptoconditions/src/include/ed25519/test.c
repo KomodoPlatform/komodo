@@ -9,6 +9,17 @@
 #include "src/ge.h"
 #include "src/sc.h"
 
+void print_signature(unsigned char signature[64], char *msg) {
+    printf("%s\n", msg);
+    for (int i = 0; i < 64; i++) {
+        printf("%02x", signature[i]);
+        if ((i + 1) % 8 != 0) {
+            printf(" ");
+        } else {
+            printf("\n");
+        }
+    }
+}
 
 int main() {
     unsigned char public_key[32], private_key[64], seed[32], scalar[32];
@@ -145,6 +156,42 @@ int main() {
     end = clock();
 
     printf("%fus per shared secret\n", ((double) ((end - start) * 1000)) / CLOCKS_PER_SEC / i * 1000);
+
+    /* ed25519 signature malleability test */
+
+    printf("testing signature malleability\n");
+
+    const unsigned char curve25519_order[32] = {
+        0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58,
+        0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10
+    };
+
+    ed25519_create_seed(seed);
+    ed25519_create_keypair(public_key, private_key, seed);
+    ed25519_sign(signature, message, message_len, public_key, private_key);
+
+    print_signature(signature, "Signature:");
+    if (ed25519_verify(signature, message, message_len, public_key)) {
+        printf("valid signature\n");
+    } else {
+        printf("invalid signature\n");
+    }
+
+    // add L to S, which starts at sig[32]
+    unsigned int s = 0;
+    for (size_t i = 0; i < 32; i++) {
+        s = signature[32 + i] + curve25519_order[i] + (s >> 8);
+        signature[32 + i] = s & 0xff;
+    }
+
+    print_signature(signature,"Modified signature:");
+    if (ed25519_verify(signature, message, message_len, public_key)) {
+        printf("valid signature\n");
+    } else {
+        printf("invalid signature\n");
+    }
 
     return 0;
 }
