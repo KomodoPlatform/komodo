@@ -3,6 +3,14 @@
 #include "ge.h"
 #include "sc.h"
 
+/* L = 2^252+27742317777372353535851937790883648493 in little-endian form */
+const unsigned char curve25519_order[32] = {
+    0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58,
+    0xd6, 0x9c, 0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10
+};
+
 static int consttime_equal(const unsigned char *x, const unsigned char *y) {
     unsigned char r = 0;
 
@@ -57,6 +65,21 @@ int ed25519_verify(const unsigned char *signature, const unsigned char *message,
 
     if (ge_frombytes_negate_vartime(&A, public_key) != 0) {
         return 0;
+    }
+
+    /* make sure 0 <= s < L, as per RFC 8032, section 5.1.7 to prevent signature
+    * malleability.  Due to the three-bit check above (forces s < 2^253) there
+    * is not that much room, but adding L once works with most signatures */
+    for (size_t i = 31; ; i--)
+    {
+        if (signature[i+32] < curve25519_order[i])
+        {
+            break;
+        }
+        else if (signature[i+32] > curve25519_order[i] || i == 0)
+        {
+            return 0;
+        }
     }
 
     sha512_init(&hash);
