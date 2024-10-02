@@ -70,7 +70,7 @@ int ed25519_verify(const unsigned char *signature, const unsigned char *message,
     /* make sure 0 <= s < L, as per RFC 8032, section 5.1.7 to prevent signature
     * malleability.  Due to the three-bit check above (forces s < 2^253) there
     * is not that much room, but adding L once works with most signatures */
-    for (size_t i = 31; ; i--)
+    for (int i = 31; ; i--)
     {
         if (signature[i+32] < curve25519_order[i])
         {
