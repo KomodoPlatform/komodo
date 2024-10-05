@@ -369,6 +369,7 @@ libbitcoin_wallet_a_SOURCES = \
 # a static library for cryptoconditions
 libcc_a_SOURCES = cc/cclib.cpp
 libcc_a_CXXFLAGS = -DBUILD_CUSTOMCC -I../secp256k1/include -I../depends/$(shell echo `../depends/config.guess`/include) -I./univalue/include -I./cryptoconditions/include -I./cryptoconditions/src -I./cryptoconditions/src/asn -I. -I./cc
+libcc_a_CPPFLAGS = -fPIC
 # libcc_a_LDFLAGS = -version-info 0:0:0
 
 # crypto primitives library
